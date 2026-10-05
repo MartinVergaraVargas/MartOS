@@ -1,3 +1,9 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Carga omen_rgb_keyboard al arrancar (driver DKMS del teclado RGB OMEN,
+# github.com/OmenLinux/omen-rgb-keyboard) → /sys/devices/platform/omen-rgb-keyboard/
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 # /etc/modules is obsolete and has been replaced by /etc/modules-load.d/.
 # Please see modules-load.d(5) and modprobe.d(5) for details.
 #

@@ -1,3 +1,12 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Curvas de ventilador del daemon omen-fand2 (OMEN 16).
+# [ac] = enchufado (prioriza enfriar) · [battery] = batería (prioriza silencio).
+# temp_curve (°C) y speed_curve (%) van por pares; entre puntos se interpola.
+# idle_speed = % por debajo del primer punto. Temperatura = máx(CPU, GPU, SSD).
+# Tras editar: sudo systemctl restart omen-fan
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 # Configuracion de omen-fand2  (curvas de ventiladores del OMEN 16)
 #
 # La temperatura de referencia es max(CPU, GPU, SSD NVMe) leida del EC / hwmon.

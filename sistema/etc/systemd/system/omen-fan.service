@@ -1,3 +1,11 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Servicio que mantiene vivo omen-fand2 (control de ventiladores por EC).
+# Carga ec_sys con escritura, arranca el daemon y, al parar, devuelve los
+# ventiladores al BIOS (omen-fan-restore). Watchdog: si se cuelga, se reinicia.
+# Tras editar: sudo systemctl daemon-reload && sudo systemctl restart omen-fan
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 [Unit]
 Description=OMEN 16 fan curve daemon (AC/battery aware)
 Documentation=https://github.com/alou-S/omen-fan

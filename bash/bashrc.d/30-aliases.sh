@@ -1,4 +1,10 @@
-# ~/.config/MartOS/bash/30-aliases.sh
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Aliases: colores en ls/grep, ll/la/l, 'alert' (notificación al acabar
+# un comando largo) y blanco-teclado/verde-teclado (RGB del OMEN).
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
+# ~/.bashrc.d/30-aliases.sh
 # Colores de ls y aliases
 
 # Soporte de color en ls/grep

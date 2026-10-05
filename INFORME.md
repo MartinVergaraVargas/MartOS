@@ -5,33 +5,39 @@ Repositorio: `~/.config/MartOS` · Gestor: `./martos` (ver `./martos ayuda`).
 
 ---
 
-## 1. Cómo funciona este repositorio
+## 1. Cómo funciona
 
-| Carpeta | Qué contiene | Cómo llega al sistema |
-|---|---|---|
-| `sistema/` | Réplica de `/` con **solo** los archivos que hemos tocado (`etc/…`, `usr/local/bin/…`) | `sudo ./martos sistema` los **copia** con dueño root, guardando antes lo que sobrescribe en `/var/backups/martos/<fecha>/` |
-| `bash/` | Toda la configuración de la terminal: `bashrc`, `profile`, `bash_logout`, módulos `NN-*.sh`, `logos/` | `./martos usuario` crea los symlinks `~/.bashrc`, `~/.profile`, `~/.bash_logout` → `bash/`. Los módulos se cargan **directamente desde aquí** |
-| `usuario/` | Otros archivos de `$HOME` (git, autostart) | `./martos usuario` los enlaza en la misma ruta de `$HOME` |
-| `gnome/` | Volcados `dconf` (atajos, dock, extensiones…) | `./martos gnome` los carga; `./martos gnome-volcar` los actualiza |
-| `personalizacion/` | Fondos y temas de Plymouth | `sudo ./martos plymouth instalar <tema>` |
-| `instalacion/` | Script de instalación original (referencia) | manual |
+**Los archivos viven y se editan en su sitio original** (`/etc/…`, `/usr/local/bin/…`, `~/.bashrc`,
+`~/.bashrc.d/…`). Los programas los leen de ahí, como siempre. Cada uno lleva al principio una
+cabecera `MartOS` que explica qué hace y qué ejecutar tras editarlo.
 
-**¿Por qué el sistema se copia y el usuario se enlaza?** Un symlink `/etc/… → ~/…` haría que
-cualquier programa que corra con tu usuario pudiera editar un archivo que luego ejecuta root
-(p. ej. `omen-fan.service`), es decir, escalar a root. Además, algunos archivos se leen en el
-arranque temprano, cuando `/home` puede no estar montado.
+`~/.config/MartOS` es solo:
+- **la guía**: este documento, con la ruta de cada archivo y lo que hace (§2);
+- **el respaldo**: una copia de cada archivo, versionada con git, para subirla a GitHub y restaurar tras formatear.
 
-### Flujo de trabajo diario
+| Carpeta del respaldo | Copia de |
+|---|---|
+| `sistema/` | los archivos personalizados de `/` (misma ruta: `sistema/etc/omen-fan/config.toml` = `/etc/omen-fan/config.toml`) |
+| `bash/` | `~/.bashrc` (`bashrc`), `~/.profile` (`profile`), `~/.bash_logout` (`bash_logout`) y `~/.bashrc.d/` (`bashrc.d/`) |
+| `usuario/` | otros archivos de `$HOME`, en la misma ruta (`~/.config/git/ignore`, autostart de eww) |
+| `gnome/` | ajustes de GNOME (atajos, dock, extensiones) volcados de `dconf` |
+| `personalizacion/` | fondos y temas de Plymouth (los 4 packs completos, fuera de git) |
+| `instalacion/` | script de instalación original (referencia) |
+
+### Flujo de trabajo
 ```bash
-cd ~/.config/MartOS
-nano sistema/etc/omen-fan/config.toml     # 1. editar en el repo
-./martos diff omen-fan                    # 2. ver qué cambiaría
-sudo ./martos sistema                     # 3. aplicar (reinicia lo necesario)
-git commit -am "Curva AC más silenciosa"  # 4. guardar
-git push                                  # 5. respaldar en GitHub
+sudo nano /etc/omen-fan/config.toml       # 1. editar el archivo EN SU SITIO
+sudo systemctl restart omen-fan           # 2. aplicar (lo indica su cabecera)
+martos estado                             # 3. ver qué cambió respecto al respaldo
+martos respaldar                          # 4. copiar los cambios al respaldo
+cd ~/.config/MartOS && git add -A && git commit -m "Curva AC más silenciosa" && git push
 ```
-Si editaste algo directamente en `/etc`: `./martos importar` lo trae al repo.
-Para bash no hace falta aplicar nada: `~/.bashrc` *es* el archivo del repo.
+Para bash igual: editas `~/.bashrc.d/30-aliases.sh`, abres una terminal nueva y luego `martos respaldar`.
+Un módulo nuevo en `~/.bashrc.d/` se detecta y se respalda solo.
+
+**¿Por qué copias y no symlinks?** Un symlink `/etc/… → ~/…` permitiría que cualquier programa de
+tu usuario modificara un archivo que luego ejecuta root (escalada de privilegios). Además, algunos
+archivos se leen al principio del arranque, cuando `/home` puede no estar montado aún.
 
 ---
 
@@ -52,7 +58,7 @@ La solución escribe directamente en el **Embedded Controller (EC)** del portát
 | `/etc/modules-load.d/omen-fan.conf` | Carga `ec_sys` en el arranque. |
 
 Origen: basado en [alou-S/omen-fan](https://github.com/alou-S/omen-fan).
-Ajustar: editar `config.toml` → `sudo ./martos sistema` (reinicia el servicio solo).
+Ajustar: `sudo nano /etc/omen-fan/config.toml` → `sudo systemctl restart omen-fan` → `martos respaldar`.
 Diagnóstico: `journalctl -u omen-fan -f` (solo registra cuando cambia la velocidad).
 
 ### 2.2 Undervolt de CPU
@@ -86,7 +92,7 @@ Driver: `nvidia-driver-580-open` (instalar con `sudo ubuntu-drivers install`).
 | Archivo | Función |
 |---|---|
 | `/etc/auto-cpufreq.conf` | **Cargador**: governor `performance`, turbo auto. **Batería**: `powersave`, `balance_power`, **máx. 1,1 GHz y sin turbo** (muy ahorrador). |
-| `power-profiles-daemon` | **Enmascarado** (chocaría con auto-cpufreq). `martos sistema` lo vuelve a enmascarar. |
+| `power-profiles-daemon` | **Enmascarado** (chocaría con auto-cpufreq). `sudo martos restaurar-sistema` lo vuelve a enmascarar. |
 | `/etc/thermald/thermal-conf.xml` | Techo térmico del paquete CPU: a 85 °C recorta potencia (RAPL) suavemente; a 90 °C recorta potencia y frecuencia al máximo. auto-cpufreq decide perfiles; thermald solo pone el techo. |
 
 auto-cpufreq se instala desde [AdnanHodzic/auto-cpufreq](https://github.com/AdnanHodzic/auto-cpufreq) (`sudo ./auto-cpufreq-installer && sudo auto-cpufreq --install`).
@@ -115,59 +121,65 @@ auto-cpufreq se instala desde [AdnanHodzic/auto-cpufreq](https://github.com/Adna
 
 ### 2.7 Terminal (bash)
 
-Todo vive en `~/.config/MartOS/bash/`. Bash solo lee `~/.bashrc` y `~/.profile` de tu home, así que esos dos
-son **symlinks** al repo. `bashrc` contiene el bloque de conda (que `conda init` exige ahí) y después carga
-**en orden** cada `~/.config/MartOS/bash/NN-*.sh` (variable `$MARTOS_BASH`). Ya no existe `~/.bashrc.d`.
+Estructura modular: `~/.bashrc` solo contiene el bloque de conda (que `conda init` exige ahí) y
+después carga **en orden** cada `~/.bashrc.d/*.sh`. Respaldo en `MartOS/bash/`.
 
 | Archivo | Función |
 |---|---|
-| `bash/profile` (= `~/.profile`) | Shell de login: carga `.bashrc`, añade `~/bin` y `~/.local/bin` al PATH (sin duplicar) y Rust. |
-| `bash/bashrc` (= `~/.bashrc`) | Sale si la shell no es interactiva; inicializa conda (`/opt/miniconda3`); carga los módulos `NN-*.sh`. |
-| `bash/bash_logout` (= `~/.bash_logout`) | Limpia la pantalla al salir de una consola de login (el de Ubuntu por defecto). |
-| `bash/00-shell-options.sh` | `checkwinsize`, `umask 002`, `lesspipe`. |
-| `bash/10-history.sh` | Historial sin duplicados, en modo añadir, 1000/2000 líneas. |
-| `bash/20-completion.sh` | Autocompletado de bash. |
-| `bash/30-aliases.sh` | Colores en `ls`/`grep`, `ll`/`la`/`l`, `alert`, y `blanco-teclado`/`verde-teclado` (RGB). |
-| `bash/50-env.sh` | Carga `~/.config/env` (API keys, **fuera de git**); variables de bioinformática (`FUNANNOTATE_DB`, `GENEMARK_PATH`, `EGGNOG_DATA_DIR`, `BUSCO_LINEAGES_PATH`, InterProScan en PATH); `~/.local/bin`; Rust. |
-| `bash/60-prompt.sh` | Prompt de dos líneas: `(entorno conda) - ~/ruta` y ` Nesus ❯` en verde sobre magenta. |
-| `bash/90-welcome.sh` | `fastfetch` con el logo ASCII `bash/logos/Geno-snap-50-1.txt` (`Geno-snap-1.txt` es la versión grande). |
+| `~/.profile` | Shell de login: carga `.bashrc`, añade `~/bin` y `~/.local/bin` al PATH (sin duplicar) y Rust. |
+| `~/.bashrc` | Sale si la shell no es interactiva; inicializa conda (`/opt/miniconda3`); carga los módulos `NN-*.sh`. |
+| `~/.bash_logout` | Limpia la pantalla al salir de una consola de login (el de Ubuntu por defecto). |
+| `~/.bashrc.d/00-shell-options.sh` | `checkwinsize`, `umask 002`, `lesspipe`. |
+| `~/.bashrc.d/10-history.sh` | Historial sin duplicados, en modo añadir, 1000/2000 líneas. |
+| `~/.bashrc.d/20-completion.sh` | Autocompletado de bash. |
+| `~/.bashrc.d/30-aliases.sh` | Colores en `ls`/`grep`, `ll`/`la`/`l`, `alert`, y `blanco-teclado`/`verde-teclado` (RGB). |
+| `~/.bashrc.d/50-env.sh` | Carga `~/.config/env` (API keys, **fuera de git**); variables de bioinformática (`FUNANNOTATE_DB`, `GENEMARK_PATH`, `EGGNOG_DATA_DIR`, `BUSCO_LINEAGES_PATH`, InterProScan en PATH); `~/.local/bin`; Rust. |
+| `~/.bashrc.d/60-prompt.sh` | Prompt de dos líneas: `(entorno conda) - ~/ruta` y ` Nesus ❯` en verde sobre magenta. |
+| `~/.bashrc.d/90-welcome.sh` | `fastfetch` con el logo ASCII `~/.bashrc.d/Geno-snap-50-1.txt` (`Geno-snap-1.txt` es la versión grande). |
 
-Para añadir algo nuevo: crea `~/.config/MartOS/bash/NN-nombre.sh`; se carga en la próxima terminal.
-Los módulos venían de `~/Downloads/bash/` (versión de junio) → `~/.bashrc.d/` (versión usada) → aquí.
+Para añadir algo nuevo: crea `~/.bashrc.d/NN-nombre.sh`; se carga en la próxima terminal.
+`~/Downloads/bash/` contiene una versión antigua (junio) de estos módulos; la que se usa es `~/.bashrc.d/`.
 
 ### 2.8 Escritorio GNOME
 
 | Archivo | Función |
 |---|---|
-| `gnome/dconf-*.ini` | Volcados de `/org/gnome/{desktop/wm/keybindings, settings-daemon/plugins/media-keys, shell, desktop/interface, mutter, desktop/peripherals, desktop/background, terminal}`. |
-| `gnome/atajos-escritorios.sh` | (antes `personalizacion/scripts/modificacion-gsettings.sh`) Quita `Super+1..9` al dock y los asigna a cambiar de escritorio; `Super+Shift+1..9` mueve la ventana. Ya está incluido en el volcado dconf; se conserva como documentación. |
-| `usuario/.config/autostart/eww-todo-daemon.desktop` | Arranca el widget de tareas eww (`~/Omentu/ToDo_EWW`) al iniciar sesión. |
-| `personalizacion/fondos/` | `horizon_upscayl_2x_digital-art-4x.png` es el fondo actual (`~/.config/background`); `horizon.jpg` es el original. |
+| `gnome/dconf-*.ini` (respaldo) | Volcados de `/org/gnome/{desktop/wm/keybindings, settings-daemon/plugins/media-keys, shell, desktop/interface, mutter, desktop/peripherals, desktop/background, terminal}`. |
+| `MartOS/gnome/atajos-escritorios.sh` | (antes `~/.config/personalizacion/scripts/modificacion-gsettings.sh`) Quita `Super+1..9` al dock y los asigna a cambiar de escritorio; `Super+Shift+1..9` mueve la ventana. Ya está incluido en el volcado dconf; se conserva como documentación. |
+| `~/.config/autostart/eww-todo-daemon.desktop` | Arranca el widget de tareas eww (`~/Omentu/ToDo_EWW`) al iniciar sesión. |
+| `MartOS/personalizacion/fondos/` | `horizon_upscayl_2x_digital-art-4x.png` es el fondo actual (`~/.config/background`); `horizon.jpg` es el original. |
 
 ### 2.9 Plymouth (animación de arranque)
 
 - Temas de [adi1090x/plymouth-themes](https://github.com/adi1090x/plymouth-themes) (GPL-3.0).
 - **Activo: `cubes`**. Instalados en `/usr/share/plymouth/themes/`: `cubes` y `dna`. Ambos se guardan en `personalizacion/plymouth/temas/`.
-- Los 4 packs completos (~280 MB, 80 temas) están en `personalizacion/plymouth/packs/`, pero **fuera de git** porque se descargan otra vez con `./martos plymouth descargar`.
-- `./martos plymouth listar` · `sudo ./martos plymouth instalar <tema>` (copia el tema, lo registra en `update-alternatives` y regenera el initramfs) · `sudo ./martos plymouth probar 6` (vista previa sin reiniciar; mejor desde una TTY).
+- Los 4 packs completos (~280 MB, 80 temas) están en `personalizacion/plymouth/packs/`, pero **fuera de git** porque se descargan otra vez con `martos plymouth descargar`.
+- `martos plymouth listar` · `sudo martos plymouth instalar <tema>` (copia el tema, lo registra en `update-alternatives` y regenera el initramfs) · `sudo martos plymouth probar 6` (vista previa sin reiniciar; mejor desde una TTY).
 
 ---
 
 ## 3. Revisión: redundancias, conflictos y riesgos
 
-### Corregido en el repo (pendiente de aplicar con `sudo ./martos sistema`)
-1. **`systemd-modules-load.service` fallaba en CADA arranque.** `/etc/modules-load.d/omen-fan.conf`
-   pedía cargar `hp-wmi`, que en este modelo da `Input/output error` (el driver
-   `omen_rgb_keyboard` ya usa la interfaz WMI). Los demás módulos se cargaban igualmente, pero el
-   servicio quedaba en rojo. omen-fand2 no usa hp-wmi (lee el EC directamente). Se ha quitado
-   `hp-wmi` de ese archivo y de `ExecStartPre` en `omen-fan.service`.
+### Corregido en el respaldo (pendiente de aplicar con `sudo martos restaurar-sistema`)
+1. **`systemd-modules-load.service` falla en CADA arranque, por `hp-wmi`.**
+   - `hp-wmi` es un *driver* del kernel para portátiles HP. `/etc/modules-load.d/omen-fan.conf` pide
+     cargarlo al arrancar, y `omen-fan.service` lo vuelve a intentar antes de arrancar.
+   - En este portátil **no carga** (`Input/output error`): el driver del teclado RGB
+     (`omen_rgb_keyboard`) es una versión modificada de hp-wmi que ya ocupa esa interfaz; su propio
+     instalador incluso trae un `hp_wmi-blacklist.conf`.
+   - Consecuencia: el servicio de arranque "Load Kernel Modules" queda en **failed** en cada
+     arranque (aparece en `systemctl --failed`). `ec_sys` y `msr` se cargan igual, así que hoy no
+     rompe nada, pero ensucia los diagnósticos.
+   - Nadie lo necesita: omen-fand2 lee el EC directamente y nunca usó hp-wmi.
+   - **Corrección:** quitar la línea `hp-wmi` de esos dos archivos. No se desinstala nada: el driver
+     sigue en el kernel por si algún día hiciera falta (`sudo modprobe hp-wmi`).
 
 ### Corregido en bash (ya activo)
 2. `~/.local/bin` se añadía al PATH dos veces (`.profile` + `50-env.sh`) → ahora se comprueba antes de añadir.
 3. `~/.cargo/env` se cargaba en `.profile` y al final de `.bashrc`, sin comprobar que existiera
    (en un sistema recién formateado daría error) → ahora con `[ -f … ]`, dentro de `50-env.sh`.
 4. `TMPDIR=/data/scratch` estaba en `/etc/environment` **y** en `.bashrc` → queda solo en `/etc/environment`.
-5. `~/.bashrc.d/bashrc` (carpeta ya retirada) era una copia antigua de `.bashrc` → no se ha llevado al repo (está en la copia de seguridad).
+5. `~/.bashrc.d/bashrc` era una copia antigua de `.bashrc` que no se usaba → retirada (copia en `~/.local/state/martos/backup-20261005-144754/`).
 
 ### Redundancias inofensivas (se dejan)
 6. `nvidia-drm.modeset=1` aparece en GRUB **y** en `modprobe.d`. Es lo mismo dos veces y no daña.
@@ -218,11 +230,11 @@ sudo apt install -y thermald smartmontools systemd-zram-generator lm-sensors \
 #    (ver instalacion/instalaciones-original.sh)
 
 # 2. Configuración
-sudo ./martos sistema            # /etc + /usr/local/bin, habilita servicios
-./martos usuario                 # symlinks de bash, git, autostart
-./martos gnome                   # atajos, dock, fondo
-./martos plymouth descargar      # opcional: los 80 temas
-sudo ./martos plymouth instalar cubes
+sudo martos restaurar-sistema            # /etc + /usr/local/bin, habilita servicios
+martos restaurar-usuario        # copia ~/.bashrc, ~/.bashrc.d, git, autostart
+martos gnome                   # atajos, dock, fondo
+martos plymouth descargar      # opcional: los 80 temas
+sudo martos plymouth instalar cubes
 
 # 3. Secretos (no están en git): recupera ~/.config/env desde tu gestor de contraseñas
 # 4. Mira /etc/fstab: añade la línea de /data  (LABEL=Respaldo /data ext4 noatime,nodiratime,nofail 0 2)

@@ -1,3 +1,9 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# smartd comprueba los discos cada 600 s (10 min).
+# Tras editar: sudo systemctl restart smartmontools
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 # Defaults for smartmontools initscript (/etc/init.d/smartmontools)
 # This is a POSIX shell fragment
 

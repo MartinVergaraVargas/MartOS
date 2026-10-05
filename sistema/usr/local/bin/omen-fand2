@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Daemon de ventiladores OMEN 16 (lo arranca omen-fan.service).
+# Lee CPU/GPU del EC y SSD por hwmon, aplica la curva AC o batería de
+# /etc/omen-fan/config.toml y escribe la velocidad en el EC cada 2 s.
+# Logs: journalctl -u omen-fan
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 """
 omen-fand2 - Fan-curve daemon para portatiles HP OMEN 16, con curvas
              distintas segun este enchufado a la corriente (AC) o con bateria.

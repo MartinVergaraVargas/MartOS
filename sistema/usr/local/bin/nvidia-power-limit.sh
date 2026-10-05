@@ -1,4 +1,11 @@
 #!/bin/bash
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Fija el límite de potencia de la GPU NVIDIA según haya cargador o no,
+# con los valores de /etc/nvidia-power-limit.conf (nvidia-smi -pl).
+# Logs: journalctl -t nvidia-power-limit
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 set -u
 
 CONF=/etc/nvidia-power-limit.conf

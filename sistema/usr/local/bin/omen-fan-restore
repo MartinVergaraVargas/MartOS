@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Devuelve el control de los ventiladores al BIOS (EC 0x62 = 0).
+# Lo ejecuta omen-fan.service al parar; úsalo a mano si algo va mal:
+#   sudo omen-fan-restore
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 """Devuelve el control de los ventiladores al BIOS. Se usa como red de
 seguridad (ExecStopPost) y se puede lanzar a mano si algo va mal."""
 import sys

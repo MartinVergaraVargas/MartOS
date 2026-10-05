@@ -1,4 +1,11 @@
-# ~/.config/MartOS/bash/50-env.sh
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Variables de entorno: carga ~/.config/env (API keys, fuera de git),
+# rutas de bioinformática (funannotate, GeneMark, eggNOG, BUSCO,
+# InterProScan) y añade ~/.local/bin y Rust al PATH.
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
+# ~/.bashrc.d/50-env.sh
 # Variables de entorno y PATH
 
 # Cargar variables extra si existen

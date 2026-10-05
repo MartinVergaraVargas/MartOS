@@ -1,3 +1,10 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Módulos incluidos en el initramfs: los de NVIDIA se cargan desde el
+# primer momento del arranque (pantalla/Plymouth correctos).
+# Tras editar: sudo update-initramfs -u
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 # List of modules that you want to include in your initramfs.
 # They will be loaded at boot time in the order below.
 #

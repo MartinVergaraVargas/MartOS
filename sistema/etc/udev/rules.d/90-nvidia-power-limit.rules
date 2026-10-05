@@ -1,1 +1,8 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Al cambiar el estado del cargador, relanza nvidia-power-limit.service
+# para ajustar el límite de potencia de la GPU (AC / batería).
+# Tras editar: sudo udevadm control --reload
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 SUBSYSTEM=="power_supply", ATTR{type}=="Mains", RUN+="/bin/systemctl start --no-block nvidia-power-limit.service"

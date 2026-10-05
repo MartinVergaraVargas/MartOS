@@ -9,3 +9,6 @@ env
 *token*
 
 .claude/settings.local.json
+
+__pycache__/
+*.tmp

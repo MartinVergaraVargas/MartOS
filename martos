@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# martos — gestor de la configuración de MartOS (OMEN 16, Ubuntu 24.04)
+# martos — respaldo y restauración de la configuración de MartOS
+#          (HP OMEN 16, Ubuntu 24.04)
 #
-# El repositorio (~/.config/MartOS) es la fuente de verdad:
-#   sistema/   → réplica de / con SOLO los archivos personalizados. Se COPIAN
-#                con dueño root (no symlinks: un symlink /etc → $HOME permitiría
-#                a cualquier proceso de tu usuario escalar a root).
-#   usuario/   → réplica de $HOME. Se ENLAZAN con symlinks (editas aquí y
-#                el cambio está vivo al instante).
-#   gnome/     → volcados dconf de los ajustes de escritorio.
-#   personalizacion/ → fondos y temas de Plymouth.
+# Modelo: los archivos VIVEN Y SE EDITAN EN SU SITIO ORIGINAL (/etc, ~/.bashrc…).
+# ~/.config/MartOS es solo:
+#   · el RESPALDO (copia) que se versiona con git y se sube a GitHub, y
+#   · la GUÍA (INFORME.md) de dónde está cada archivo y qué hace.
+#
+#   sistema/   ← copia de los archivos personalizados de /  (etc/…, usr/local/bin/…)
+#   bash/      ← copia de ~/.bashrc, ~/.profile, ~/.bash_logout y ~/.bashrc.d/
+#   usuario/   ← copia de otros archivos de $HOME (misma ruta relativa)
+#   gnome/     ← volcados dconf de los ajustes de escritorio
 #
 # Uso: martos <orden>   (ver `martos ayuda`)
 
@@ -16,18 +18,13 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 SISTEMA="$REPO/sistema"
-USUARIO="$REPO/usuario"
 GNOME="$REPO/gnome"
 PLY="$REPO/personalizacion/plymouth"
 PLY_UPSTREAM="https://github.com/adi1090x/plymouth-themes"
 
-# Symlinks de $HOME → repo:  "ruta en el repo|ruta en $HOME"
-# Además, todo archivo dentro de usuario/ se enlaza en la misma ruta de $HOME.
-LINKS=(
-    "bash/bashrc|.bashrc"
-    "bash/profile|.profile"
-    "bash/bash_logout|.bash_logout"
-)
+# Con sudo, el $HOME relevante es el del usuario que llamó a sudo
+HOME_USER="${SUDO_USER:-$USER}"
+HOME_DIR="$(getent passwd "$HOME_USER" | cut -d: -f6)"
 
 if [ -t 1 ]; then
     R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; B=$'\e[1;34m'; N=$'\e[0m'
@@ -39,87 +36,132 @@ info() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }
 warn() { printf '%s!!%s  %s\n' "$Y" "$N" "$*" >&2; }
 die()  { printf '%sERROR:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 
-need_root()    { [ "$(id -u)" -eq 0 ] || die "esta orden necesita root: sudo $0 $*"; }
+need_root()    { [ "$(id -u)" -eq 0 ] || die "esta orden necesita root: sudo martos $*"; }
 need_nonroot() { [ "$(id -u)" -ne 0 ] || die "ejecútala como tu usuario, sin sudo"; }
 
-# Lista los archivos de sistema/ como rutas relativas (etc/..., usr/...)
-sistema_files() { (cd "$SISTEMA" && find . -type f -printf '%P\n' | sort); }
-
-# Pares "origen absoluto en el repo|destino relativo a $HOME"
-usuario_targets() {
-    local l f
-    for l in "${LINKS[@]}"; do printf '%s|%s\n' "$REPO/${l%%|*}" "${l#*|}"; done
-    (cd "$USUARIO" && find . -type f -printf '%P\n' | sort) | while read -r f; do
-        printf '%s|%s\n' "$USUARIO/$f" "$f"
+# ---------------------------------------------------------------------------
+# Pares "copia en el repo|original en el sistema" de todo lo respaldado
+# ---------------------------------------------------------------------------
+pairs_sistema() {
+    local f
+    (cd "$SISTEMA" && find . -type f -printf '%P\n' | sort) | while read -r f; do
+        printf '%s|/%s\n' "$SISTEMA/$f" "$f"
     done
+}
+
+pairs_usuario() {
+    local f
+    printf '%s|%s\n' \
+        "$REPO/bash/bashrc"      "$HOME_DIR/.bashrc" \
+        "$REPO/bash/profile"     "$HOME_DIR/.profile" \
+        "$REPO/bash/bash_logout" "$HOME_DIR/.bash_logout"
+    (cd "$REPO/bash/bashrc.d" && find . -type f -printf '%P\n' | sort) | while read -r f; do
+        printf '%s|%s\n' "$REPO/bash/bashrc.d/$f" "$HOME_DIR/.bashrc.d/$f"
+    done
+    (cd "$REPO/usuario" && find . -type f -printf '%P\n' | sort) | while read -r f; do
+        printf '%s|%s\n' "$REPO/usuario/$f" "$HOME_DIR/$f"
+    done
+}
+
+pairs_todo() { pairs_sistema; pairs_usuario; }
+
+# Archivos nuevos en ~/.bashrc.d que aún no están en el respaldo
+bashrc_d_nuevos() {
+    local f
+    [ -d "$HOME_DIR/.bashrc.d" ] || return 0
+    for f in "$HOME_DIR/.bashrc.d"/*; do
+        [ -f "$f" ] && [ ! -e "$REPO/bash/bashrc.d/$(basename "$f")" ] && echo "$f"
+    done
+    return 0
 }
 
 # ---------------------------------------------------------------------------
 # estado / diff
 # ---------------------------------------------------------------------------
 cmd_estado() {
-    local f n_ok=0 n_diff=0 n_falta=0
-    info "Sistema (repo → /)"
-    while read -r f; do
-        if [ ! -e "/$f" ]; then
-            printf '  %sFALTA%s      /%s\n' "$R" "$N" "$f"; n_falta=$((n_falta+1))
-        elif cmp -s "$SISTEMA/$f" "/$f"; then
+    local copia orig n_ok=0 n_cambio=0 n_falta=0 nuevo
+    info "Comparando el sistema con el respaldo de $REPO"
+    while IFS='|' read -r copia orig; do
+        if [ ! -e "$orig" ]; then
+            printf '  %sFALTA EN EL SISTEMA%s     %s\n' "$R" "$N" "$orig"; n_falta=$((n_falta+1))
+        elif cmp -s "$copia" "$orig"; then
             n_ok=$((n_ok+1))
         else
-            printf '  %sDIFERENTE%s  /%s\n' "$Y" "$N" "$f"; n_diff=$((n_diff+1))
+            printf '  %sCAMBIADO%s (sin respaldar)  %s\n' "$Y" "$N" "$orig"; n_cambio=$((n_cambio+1))
         fi
-    done < <(sistema_files)
-    printf '  %s%d iguales%s, %d diferentes, %d sin instalar\n' "$G" "$n_ok" "$N" "$n_diff" "$n_falta"
-
-    info "Usuario (symlinks en \$HOME)"
-    local t want
-    while IFS='|' read -r want t; do
-        if [ "$(readlink "$HOME/$t" 2>/dev/null)" = "$want" ]; then
-            printf '  %sOK%s         ~/%s\n' "$G" "$N" "$t"
-        elif [ -e "$HOME/$t" ]; then
-            printf '  %sSIN ENLAZAR%s ~/%s (existe, pero no apunta al repo)\n' "$Y" "$N" "$t"
-        else
-            printf '  %sFALTA%s      ~/%s\n' "$R" "$N" "$t"
-        fi
-    done < <(usuario_targets)
-    echo
-    echo "Detalle de diferencias: $0 diff [ruta]"
+    done < <(pairs_todo)
+    while read -r nuevo; do
+        [ -n "$nuevo" ] || continue
+        printf '  %sNUEVO%s (sin respaldar)     %s\n' "$Y" "$N" "$nuevo"; n_cambio=$((n_cambio+1))
+    done < <(bashrc_d_nuevos)
+    printf '  %s%d al día%s · %d cambiados/nuevos · %d faltan en el sistema\n' \
+        "$G" "$n_ok" "$N" "$n_cambio" "$n_falta"
+    [ "$n_cambio" -gt 0 ] && echo "  → guardar en el respaldo: martos respaldar"
+    [ "$n_falta" -gt 0 ]  && echo "  → reponerlos: sudo martos restaurar-sistema / martos restaurar-usuario"
+    if git -C "$REPO" rev-parse >/dev/null 2>&1 && [ -n "$(git -C "$REPO" status --porcelain)" ]; then
+        echo "  → hay cambios en el respaldo sin commit: cd $REPO && git add -A && git commit"
+    fi
+    return 0
 }
 
 cmd_diff() {
-    local f filter="${1:-}"
-    while read -r f; do
-        [ -n "$filter" ] && [[ "/$f" != *"$filter"* ]] && continue
-        [ -e "/$f" ] || { echo "--- /$f no existe en el sistema"; continue; }
-        cmp -s "$SISTEMA/$f" "/$f" && continue
-        diff -u --label "sistema actual: /$f" --label "repo: sistema/$f" "/$f" "$SISTEMA/$f" || true
-    done < <(sistema_files)
+    local copia orig filter="${1:-}"
+    while IFS='|' read -r copia orig; do
+        [ -n "$filter" ] && [[ "$orig" != *"$filter"* ]] && continue
+        [ -e "$orig" ] || { echo "--- $orig no existe en el sistema"; continue; }
+        cmp -s "$copia" "$orig" && continue
+        diff -u --label "respaldo: ${copia#"$REPO"/}" --label "sistema: $orig" "$copia" "$orig" || true
+    done < <(pairs_todo)
 }
 
 # ---------------------------------------------------------------------------
-# sistema: instala sistema/ → /  (root)
+# respaldar: sistema → repo  (uso diario; sin sudo)
 # ---------------------------------------------------------------------------
-cmd_sistema() {
-    need_root sistema
-    local ts backup f mode changed=()
+cmd_respaldar() {
+    need_nonroot
+    local copia orig n=0 nuevo ini path
+    while IFS='|' read -r copia orig; do
+        [ -r "$orig" ] || continue
+        cmp -s "$copia" "$orig" && continue
+        cp -p "$orig" "$copia"; echo "  respaldado $orig"; n=$((n+1))
+    done < <(pairs_todo)
+    while read -r nuevo; do
+        [ -n "$nuevo" ] || continue
+        cp -p "$nuevo" "$REPO/bash/bashrc.d/"; echo "  respaldado (nuevo) $nuevo"; n=$((n+1))
+    done < <(bashrc_d_nuevos)
+    for ini in "$GNOME"/dconf-*.ini; do
+        path="/org/gnome/$(basename "$ini" .ini | sed 's/^dconf-//; s/\./\//g')/"
+        dconf dump "$path" > "$ini.tmp" && mv "$ini.tmp" "$ini"
+    done
+    info "$n archivos actualizados (+ ajustes de GNOME)."
+    if git -C "$REPO" rev-parse >/dev/null 2>&1; then
+        git -C "$REPO" status --short
+        echo "Para guardar: cd $REPO && git add -A && git commit -m '…' && git push"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# restaurar-sistema: repo → /  (tras formatear, o para aplicar el respaldo; root)
+# ---------------------------------------------------------------------------
+cmd_restaurar_sistema() {
+    need_root restaurar-sistema
+    local ts backup copia orig mode changed=()
     ts="$(date +%Y%m%d-%H%M%S)"
     backup="/var/backups/martos/$ts"
 
-    while read -r f; do
-        if [ -e "/$f" ] && cmp -s "$SISTEMA/$f" "/$f"; then continue; fi
-        if [ -e "/$f" ]; then
-            install -D -m 600 "/$f" "$backup/$f"
-        fi
-        if [ -x "$SISTEMA/$f" ]; then mode=755; else mode=644; fi
-        install -D -o root -g root -m "$mode" "$SISTEMA/$f" "/$f"
-        echo "  instalado /$f"
-        changed+=("/$f")
-    done < <(sistema_files)
+    while IFS='|' read -r copia orig; do
+        if [ -e "$orig" ] && cmp -s "$copia" "$orig"; then continue; fi
+        [ -e "$orig" ] && install -D -m 600 "$orig" "$backup$orig"
+        if [ -x "$copia" ]; then mode=755; else mode=644; fi
+        install -D -o root -g root -m "$mode" "$copia" "$orig"
+        echo "  restaurado $orig"
+        changed+=("$orig")
+    done < <(pairs_sistema)
 
     if [ "${#changed[@]}" -eq 0 ]; then
-        info "Nada que cambiar: el sistema ya coincide con el repo."
+        info "El sistema ya coincide con el respaldo."
     else
-        [ -d "$backup" ] && info "Copia de lo sobrescrito en $backup"
+        [ -d "$backup" ] && info "Lo que había antes quedó en $backup"
         post_install "${changed[@]}"
     fi
     enable_services
@@ -133,27 +175,28 @@ post_install() {
     if has /etc/systemd/system/; then systemctl daemon-reload; fi
     if has /etc/udev/rules.d/; then udevadm control --reload; fi
     if has /etc/sysctl.d/; then sysctl --system >/dev/null; fi
-    if has /etc/modules-load.d/ || has /etc/modprobe.d/ || has /etc/initramfs-tools/; then
-        info "Regenerando initramfs (módulos del kernel cambiados)…"
+    if has /etc/modules-load.d/ || has /etc/modprobe.d/ || has /etc/initramfs-tools/ || has "/etc/modules "; then
+        info "Regenerando initramfs (configuración de módulos cambiada)…"
         update-initramfs -u
-        reboot=1
+        systemctl restart systemd-modules-load.service \
+            || warn "systemd-modules-load sigue fallando: journalctl -b -u systemd-modules-load"
     fi
     if has /etc/default/grub; then update-grub; reboot=1; fi
     if has /etc/omen-fan/ || has /usr/local/bin/omen-fan || has omen-fan.service; then
         systemctl restart omen-fan.service || warn "omen-fan no arrancó: journalctl -u omen-fan"
     fi
-    if has /etc/intel-undervolt.conf; then intel-undervolt apply || warn "intel-undervolt apply falló"; fi
+    if has /etc/intel-undervolt.conf; then intel-undervolt apply >/dev/null || warn "intel-undervolt apply falló"; fi
     if has /etc/auto-cpufreq.conf; then systemctl restart auto-cpufreq.service || true; fi
     if has /etc/thermald/; then systemctl restart thermald.service || true; fi
     if has /etc/smartd.conf || has /etc/default/smartmontools; then systemctl restart smartmontools.service || true; fi
     if has /etc/nvidia-power-limit.conf || has nvidia-power-limit; then systemctl start nvidia-power-limit.service || true; fi
     if has /etc/bluetooth/; then systemctl restart bluetooth.service || true; fi
     # logind, gdm3, zram, environment, tmp.mount: no se reinician en caliente
-    # (cortaría la sesión gráfica); se aplican al reiniciar.
+    # (cortaría la sesión gráfica); los cambios REALES se aplican al reiniciar.
     if has /etc/systemd/logind.conf || has /etc/gdm3/ || has zram-generator || has /etc/environment || has tmp.mount; then
         reboot=1
     fi
-    [ "$reboot" -eq 1 ] && warn "Algunos cambios se aplican al REINICIAR."
+    [ "$reboot" -eq 1 ] && warn "Si algo de lo anterior cambió de verdad (no solo comentarios), se aplica al REINICIAR."
     return 0
 }
 
@@ -167,50 +210,35 @@ enable_services() {
         if systemctl cat "$u" >/dev/null 2>&1; then
             systemctl is-enabled -q "$u" 2>/dev/null || { systemctl enable "$u" && echo "  habilitado $u"; }
         else
-            warn "$u no existe (¿falta instalar su programa? ver INFORME.md)"
+            warn "$u no existe (¿falta instalar su programa? ver INFORME.md §4)"
         fi
     done
 }
 
 # ---------------------------------------------------------------------------
-# importar: copia al repo lo que hayas editado directamente en /etc
+# restaurar-usuario: repo → $HOME por COPIA (tras formatear)
 # ---------------------------------------------------------------------------
-cmd_importar() {
+cmd_restaurar_usuario() {
     need_nonroot
-    local f n=0 filter="${1:-}"
-    while read -r f; do
-        [ -n "$filter" ] && [[ "/$f" != *"$filter"* ]] && continue
-        [ -r "/$f" ] || continue
-        cmp -s "$SISTEMA/$f" "/$f" && continue
-        cp -p "/$f" "$SISTEMA/$f"; echo "  importado /$f"; n=$((n+1))
-    done < <(sistema_files)
-    info "$n archivos importados. Revisa con: git -C \"$REPO\" diff"
-}
-
-# ---------------------------------------------------------------------------
-# usuario: symlinks $HOME → usuario/
-# ---------------------------------------------------------------------------
-cmd_usuario() {
-    need_nonroot
-    local t src dst backup
-    backup="$HOME/.local/state/martos/backup-$(date +%Y%m%d-%H%M%S)"
-    while IFS='|' read -r src t; do
-        dst="$HOME/$t"
-        [ "$(readlink "$dst" 2>/dev/null)" = "$src" ] && continue
-        if [ -e "$dst" ] || [ -L "$dst" ]; then
-            mkdir -p "$(dirname "$backup/$t")"
-            mv "$dst" "$backup/$t"
+    local copia orig rel backup
+    backup="$HOME_DIR/.local/state/martos/antes-de-restaurar-$(date +%Y%m%d-%H%M%S)"
+    while IFS='|' read -r copia orig; do
+        [ -f "$orig" ] && [ ! -L "$orig" ] && cmp -s "$copia" "$orig" && continue
+        rel="${orig#"$HOME_DIR"}"
+        if [ -e "$orig" ] || [ -L "$orig" ]; then
+            mkdir -p "$(dirname "$backup$rel")"
+            mv "$orig" "$backup$rel"
         fi
-        mkdir -p "$(dirname "$dst")"
-        ln -s "$src" "$dst"
-        echo "  ~/$t → $src"
-    done < <(usuario_targets)
-    [ -d "$backup" ] && info "Originales guardados en $backup"
-    info "Listo. Abre una terminal nueva para ver los cambios de bash."
+        mkdir -p "$(dirname "$orig")"
+        cp -p "$copia" "$orig"
+        echo "  restaurado $orig"
+    done < <(pairs_usuario)
+    [ -d "$backup" ] && info "Lo que había antes quedó en $backup"
+    info "Listo. Abre una terminal nueva."
 }
 
 # ---------------------------------------------------------------------------
-# gnome: carga los ajustes dconf y el fondo
+# gnome: carga los ajustes dconf y el fondo (tras formatear)
 # ---------------------------------------------------------------------------
 cmd_gnome() {
     need_nonroot
@@ -220,20 +248,10 @@ cmd_gnome() {
         path="/org/gnome/$(basename "$ini" .ini | sed 's/^dconf-//; s/\./\//g')/"
         dconf load "$path" < "$ini" && echo "  cargado $path"
     done
-    if [ ! -e "$HOME/.config/background" ]; then
-        cp "$REPO/personalizacion/fondos/horizon_upscayl_2x_digital-art-4x.png" "$HOME/.config/background"
+    if [ ! -e "$HOME_DIR/.config/background" ]; then
+        cp "$REPO/personalizacion/fondos/horizon_upscayl_2x_digital-art-4x.png" "$HOME_DIR/.config/background"
         echo "  fondo restaurado en ~/.config/background"
     fi
-}
-
-cmd_gnome_volcar() {
-    need_nonroot
-    local ini path
-    for ini in "$GNOME"/dconf-*.ini; do
-        path="/org/gnome/$(basename "$ini" .ini | sed 's/^dconf-//; s/\./\//g')/"
-        dconf dump "$path" > "$ini"
-    done
-    info "Volcados actualizados. Revisa con: git -C \"$REPO\" diff gnome/"
 }
 
 # ---------------------------------------------------------------------------
@@ -257,7 +275,7 @@ cmd_plymouth() {
                 info "Temas en los packs descargados:"
                 for p in "$PLY"/packs/pack_*; do printf '  %s: %s\n' "$(basename "$p")" "$(ls "$p" | tr '\n' ' ')"; done
             else
-                warn "Packs no descargados. Ejecuta: $0 plymouth descargar"
+                warn "Packs no descargados. Ejecuta: martos plymouth descargar"
             fi ;;
         descargar)
             need_nonroot
@@ -285,34 +303,36 @@ cmd_plymouth() {
 
 cmd_ayuda() {
     cat <<EOF
-martos — configuración de MartOS centralizada en $REPO
+martos — respaldo y guía de la configuración de MartOS ($REPO)
 
-  martos estado               qué coincide y qué difiere entre repo y sistema
-  martos diff [texto]         diferencias detalladas (filtra por ruta)
-  sudo martos sistema         instala sistema/ en / (con copia de seguridad)
-  martos importar [texto]     trae al repo cambios hechos a mano en /etc
-  martos usuario              crea los symlinks ~/.bashrc, ~/.profile… → repo
-  martos gnome                carga atajos/ajustes de GNOME y el fondo
-  martos gnome-volcar         guarda en el repo los ajustes GNOME actuales
-  martos plymouth listar      temas disponibles y tema activo
-  martos plymouth descargar   descarga los 4 packs de adi1090x (~280 MB)
-  sudo martos plymouth instalar <tema>
-  sudo martos plymouth probar [segundos]
+Los archivos se editan EN SU SITIO (/etc/…, ~/.bashrc, ~/.bashrc.d/…).
+Dónde está cada uno y qué hace: $REPO/INFORME.md
 
-Flujo habitual: editar en el repo → (sudo) martos sistema → git commit → git push
-Documentación completa: $REPO/INFORME.md
+Uso diario
+  martos estado               ¿hay cambios en el sistema sin respaldar?
+  martos diff [texto]         qué ha cambiado respecto al respaldo (filtra por ruta)
+  martos respaldar            copia los cambios al respaldo (+ ajustes GNOME)
+                              luego: git add -A && git commit && git push
+
+Tras formatear
+  sudo martos restaurar-sistema   respaldo → /etc, /usr/local/bin (+ servicios)
+  martos restaurar-usuario        respaldo → ~/.bashrc, ~/.bashrc.d…
+  martos gnome                    atajos, dock y fondo
+
+Plymouth
+  martos plymouth listar | descargar
+  sudo martos plymouth instalar <tema> | probar [segundos]
 EOF
 }
 
 case "${1:-ayuda}" in
-    estado)        shift; cmd_estado "$@" ;;
-    diff)          shift; cmd_diff "$@" ;;
-    sistema)       shift; cmd_sistema "$@" ;;
-    importar)      shift; cmd_importar "$@" ;;
-    usuario)       shift; cmd_usuario "$@" ;;
-    gnome)         shift; cmd_gnome "$@" ;;
-    gnome-volcar)  shift; cmd_gnome_volcar "$@" ;;
-    plymouth)      shift; cmd_plymouth "$@" ;;
-    ayuda|-h|--help) cmd_ayuda ;;
+    estado)              shift; cmd_estado "$@" ;;
+    diff)                shift; cmd_diff "$@" ;;
+    respaldar)           shift; cmd_respaldar "$@" ;;
+    restaurar-sistema)   shift; cmd_restaurar_sistema "$@" ;;
+    restaurar-usuario)   shift; cmd_restaurar_usuario "$@" ;;
+    gnome)               shift; cmd_gnome "$@" ;;
+    plymouth)            shift; cmd_plymouth "$@" ;;
+    ayuda|-h|--help)     cmd_ayuda ;;
     *) die "orden desconocida '$1' (martos ayuda)" ;;
 esac

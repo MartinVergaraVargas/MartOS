@@ -1,3 +1,9 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Ejecuta una vez nvidia-power-limit.sh (al arrancar, y la regla udev
+# 90-nvidia-power-limit lo relanza al enchufar/desenchufar el cargador).
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 [Unit]
 Description=Limite de potencia de la GPU NVIDIA segun la fuente de energia
 After=multi-user.target

@@ -1,4 +1,12 @@
 <?xml version="1.0"?>
+<!-- ────────────────────────────────────────────────────────────────── -->
+<!-- MartOS -->
+<!-- Techo térmico de la CPU (thermald): a 85 °C recorta potencia (RAPL) -->
+<!-- suavemente; a 90 °C recorta potencia y frecuencia al máximo. -->
+<!-- auto-cpufreq decide los perfiles; thermald solo limita la temperatura. -->
+<!-- Tras editar: sudo systemctl restart thermald -->
+<!-- Guía de todos los archivos: ~/.config/MartOS/INFORME.md -->
+<!-- ────────────────────────────────────────────────────────────────── -->
 <!-- thermald config — OMEN 16 i7-11800H -->
 <!-- Objetivo: limitar temperatura del paquete CPU a 90 °C -->
 <!-- auto-cpufreq gestiona los perfiles; thermald solo pone el techo térmico -->

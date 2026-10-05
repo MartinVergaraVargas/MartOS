@@ -1,3 +1,10 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Se ejecuta al iniciar sesión (login): carga ~/.bashrc y añade ~/bin,
+# ~/.local/bin y Rust al PATH (sin duplicar). Afecta también a apps gráficas.
+# Tras editar: cerrar sesión y volver a entrar.
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
 # ~/.profile: executed by the command interpreter for login shells.
 # This file is not read by bash(1), if ~/.bash_profile or ~/.bash_login
 # exists.
