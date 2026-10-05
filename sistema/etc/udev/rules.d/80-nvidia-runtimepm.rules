@@ -1,0 +1,12 @@
+# ──────────────────────────────────────────────────────────────────
+# MartOS
+# Deja que la NVIDIA se apague sola cuando no se usa (runtime PM / RTD3).
+# La regla del driver (71-nvidia.rules) solo actúa en "bind", que ocurre
+# dentro del initramfs, donde esa regla no está: la GPU quedaba en "on"
+# para siempre. Aquí también se aplica en "add" (arranque real).
+# Comprobar: cat /sys/bus/pci/devices/0000:01:00.0/power/runtime_status
+#            (→ suspended; no usar nvidia-smi, que la despierta)
+# Tras editar: sudo udevadm control --reload
+# Guía de todos los archivos: ~/.config/MartOS/INFORME.md
+# ──────────────────────────────────────────────────────────────────
+ACTION=="add|bind", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x03[0-9]*", TEST=="power/control", ATTR{power/control}="auto"

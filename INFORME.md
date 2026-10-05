@@ -81,6 +81,7 @@ Verificar: `sudo intel-undervolt read`. Probado estable (stress test, 10-sep-202
 | `/etc/nvidia-power-limit.conf` | `AC_LIMIT=100` W, `BATT_LIMIT=40` W (se sube al mínimo de la tarjeta si es menor). |
 | `/etc/systemd/system/nvidia-power-limit.service` | `oneshot` que ejecuta el script al arrancar. |
 | `/etc/udev/rules.d/90-nvidia-power-limit.rules` | Al enchufar/desenchufar el cargador relanza el servicio. |
+| `/etc/udev/rules.d/80-nvidia-runtimepm.rules` | Pone `power/control=auto` en la NVIDIA para que se apague sola en reposo (ver sección 3, punto 6). Comprobar con `cat /sys/bus/pci/devices/0000:01:00.0/power/runtime_status` → `suspended`. |
 | `/etc/modprobe.d/nvidia-graphics-drivers.conf` | `nvidia-drm modeset=1` (necesario para Wayland y para Plymouth con NVIDIA). |
 | `/etc/initramfs-tools/modules` | Mete los módulos NVIDIA en el initramfs (pantalla correcta desde el arranque / Plymouth). |
 | `/etc/prime-discrete` | `on-demand`: la iGPU Intel dibuja el escritorio y la NVIDIA solo se usa cuando una app lo pide (ahorro de batería). |
@@ -183,11 +184,22 @@ Para añadir algo nuevo: crea `~/.bashrc.d/NN-nombre.sh`; se carga en la próxim
 4. `TMPDIR=/data/scratch` estaba en `/etc/environment` **y** en `.bashrc` → queda solo en `/etc/environment`.
 5. `~/.bashrc.d/bashrc` era una copia antigua de `.bashrc` que no se usaba → retirada (copia en `~/.local/state/martos/backup-20261005-144754/`).
 
+### Corregido en el sistema (ya activo)
+6. **La NVIDIA nunca se apagaba en reposo** (corregido el 6-oct-2026).
+   - `/sys/bus/pci/devices/0000:01:00.0/power/control` estaba en `on` y la GPU siempre `active`: varios W perdidos en batería.
+   - Causa: `/etc/initramfs-tools/modules` carga `nvidia.ko` desde el initramfs (segundo ~1,2 del arranque). La regla
+     del driver que pone `auto` (`/usr/lib/udev/rules.d/71-nvidia.rules`) solo actúa en el evento `bind`, que ocurre
+     allí, pero esa regla no se copia al initramfs; en el arranque real udev solo repite eventos `add`.
+   - **Corrección:** `/etc/udev/rules.d/80-nvidia-runtimepm.rules` aplica lo mismo en `add|bind`. Verificado tras
+     reiniciar: `auto` / `suspended` / Video Memory `Off`.
+   - Sigue despertando (y es normal): al usar apps con la GPU dedicada, con `nvidia-smi` (lo llama `nvidia-power-limit`
+     al cambiar de cargador o volver de suspensión) y con monitores en HDMI o `DP-1`, que van cableados a la NVIDIA.
+
 ### Redundancias inofensivas (se dejan)
-6. `nvidia-drm.modeset=1` aparece en GRUB **y** en `modprobe.d`. Es lo mismo dos veces y no daña.
-7. `ec_sys write_support=1` aparece en `modprobe.d`, `modules-load.d` y el `ExecStartPre` del servicio. Así se garantiza el orden de arranque.
-8. Las líneas `daemon power/tjoffset` de `intel-undervolt.conf` no hacen nada (el *loop* está deshabilitado).
-9. Swap doble: zram 6 GiB (prioridad 100) + `/swap.img` 8 GiB (prioridad −1). Funciona bien (el archivo solo se usa si zram se llena). Si nunca usas hibernación y 30 GiB de RAM te sobran, se puede eliminar `/swap.img`.
+7. `nvidia-drm.modeset=1` aparece en GRUB **y** en `modprobe.d`. Es lo mismo dos veces y no daña.
+8. `ec_sys write_support=1` aparece en `modprobe.d`, `modules-load.d` y el `ExecStartPre` del servicio. Así se garantiza el orden de arranque.
+9. Las líneas `daemon power/tjoffset` de `intel-undervolt.conf` no hacen nada (el *loop* está deshabilitado).
+10. Swap doble: zram 6 GiB (prioridad 100) + `/swap.img` 8 GiB (prioridad −1). Funciona bien (el archivo solo se usa si zram se llena). Si nunca usas hibernación y 30 GiB de RAM te sobran, se puede eliminar `/swap.img`.
 
 ### Interacciones revisadas: compatibles
 - **auto-cpufreq + thermald + undervolt + curvas de ventilador** funcionan juntos. Con batería,
