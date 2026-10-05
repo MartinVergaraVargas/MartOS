@@ -56,6 +56,7 @@ La solución escribe directamente en el **Embedded Controller (EC)** del portát
 | `/etc/systemd/system/omen-fan.service` | `Type=notify`, `WatchdogSec=20`, `Restart=always`. Carga `ec_sys` antes de arrancar y ejecuta `omen-fan-restore` al parar. |
 | `/etc/modprobe.d/omen-fan-ec.conf` | `options ec_sys write_support=1` → permite **escribir** en `/sys/kernel/debug/ec/ec0/io`. |
 | `/etc/modules-load.d/omen-fan.conf` | Carga `ec_sys` en el arranque. |
+| `/etc/modprobe.d/blacklist-hp-wmi.conf` | `blacklist hp_wmi`: impide que se cargue solo (falla en este modelo y choca con `omen_rgb_keyboard`). |
 
 Origen: basado en [alou-S/omen-fan](https://github.com/alou-S/omen-fan).
 Ajustar: `sudo nano /etc/omen-fan/config.toml` → `sudo systemctl restart omen-fan` → `martos respaldar`.
@@ -171,8 +172,9 @@ Para añadir algo nuevo: crea `~/.bashrc.d/NN-nombre.sh`; se carga en la próxim
      arranque (aparece en `systemctl --failed`). `ec_sys` y `msr` se cargan igual, así que hoy no
      rompe nada, pero ensucia los diagnósticos.
    - Nadie lo necesita: omen-fand2 lee el EC directamente y nunca usó hp-wmi.
-   - **Corrección:** quitar la línea `hp-wmi` de esos dos archivos. No se desinstala nada: el driver
-     sigue en el kernel por si algún día hiciera falta (`sudo modprobe hp-wmi`).
+   - **Corrección:** quitar la línea `hp-wmi` de esos dos archivos y añadir `/etc/modprobe.d/blacklist-hp-wmi.conf`
+     (lo que recomiendan los autores de omen-rgb-keyboard). El archivo `hp-wmi.ko` no se borra: pertenece al
+     paquete del kernel y volvería con cada actualización.
 
 ### Corregido en bash (ya activo)
 2. `~/.local/bin` se añadía al PATH dos veces (`.profile` + `50-env.sh`) → ahora se comprueba antes de añadir.
