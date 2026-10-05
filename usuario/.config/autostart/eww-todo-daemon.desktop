@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Eww ToDo Widget Daemon
+Comment=Starts the eww daemon for the ToDo_EWW widget
+Exec=env GDK_BACKEND=x11 /home/nesus/.local/bin/eww --config /home/nesus/Omentu/ToDo_EWW daemon
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

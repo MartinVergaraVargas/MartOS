@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!-- thermald config — OMEN 16 i7-11800H -->
+<!-- Objetivo: limitar temperatura del paquete CPU a 90 °C -->
+<!-- auto-cpufreq gestiona los perfiles; thermald solo pone el techo térmico -->
+
+<ThermalConfiguration>
+  <Platform>
+    <Name>OMEN 16 limit 90C</Name>
+    <ProductName>OMEN by HP Laptop 16-b0xxx</ProductName>
+    <Preference>QUIET</Preference>
+    <ThermalZones>
+
+      <ThermalZone>
+        <Type>x86_pkg_temp</Type>
+        <TripPoints>
+
+          <!-- A 85 °C empieza a reducir potencia suavemente -->
+          <TripPoint>
+            <SensorType>x86_pkg_temp</SensorType>
+            <Temperature>85000</Temperature>
+            <type>passive</type>
+            <ControlType>SEQUENTIAL</ControlType>
+            <CoolingDevice>
+              <index>1</index>
+              <type>rapl_controller</type>
+              <SamplingPeriod>2</SamplingPeriod>
+              <TargetState>3</TargetState>
+            </CoolingDevice>
+          </TripPoint>
+
+          <!-- A 90 °C throttling agresivo para no pasar de ahí -->
+          <TripPoint>
+            <SensorType>x86_pkg_temp</SensorType>
+            <Temperature>90000</Temperature>
+            <type>passive</type>
+            <ControlType>PARALLEL</ControlType>
+            <CoolingDevice>
+              <index>2</index>
+              <type>rapl_controller</type>
+              <SamplingPeriod>1</SamplingPeriod>
+              <TargetState>MAXSTATE</TargetState>
+            </CoolingDevice>
+            <CoolingDevice>
+              <index>1</index>
+              <type>cpufreq</type>
+              <SamplingPeriod>1</SamplingPeriod>
+              <TargetState>MAXSTATE</TargetState>
+            </CoolingDevice>
+          </TripPoint>
+
+        </TripPoints>
+      </ThermalZone>
+
+    </ThermalZones>
+  </Platform>
+</ThermalConfiguration>

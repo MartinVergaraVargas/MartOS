@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""
+omen-fand2 - Fan-curve daemon para portatiles HP OMEN 16, con curvas
+             distintas segun este enchufado a la corriente (AC) o con bateria.
+
+Basado en omen-fan de alou-S (https://github.com/alou-S/omen-fan).
+Controla los ventiladores escribiendo directamente en el Embedded Controller
+a traves de /sys/kernel/debug/ec/ec0/io (requiere el modulo ec_sys write_support=1).
+
+- Lee temperatura de CPU (EC 0x57), GPU (EC 0xB7) y de los SSD NVMe
+  (via hwmon), usa la mayor de todas.
+- Interpola linealmente sobre la curva activa (AC o bateria).
+- Reescribe "BIOS control OFF" en cada ciclo; al parar (SIGTERM/SIGINT) o
+  ante cualquier error devuelve el control de los ventiladores al BIOS.
+- Soporta el watchdog de systemd (Type=notify): si se cuelga, systemd lo reinicia.
+"""
+
+import os
+import signal
+import socket
+import sys
+import time
+import tomllib
+
+ECIO_FILE = "/sys/kernel/debug/ec/ec0/io"
+CONFIG_FILE = "/etc/omen-fan/config.toml"
+AC_ONLINE_FILE = "/sys/class/power_supply/ADP1/online"
+
+# --- Offsets del Embedded Controller (OMEN 16) ---
+FAN1_OFFSET = 0x34
+FAN2_OFFSET = 0x35
+BIOS_OFFSET = 0x62          # 6 = control manual, 0 = control BIOS
+TIMER_OFFSET = 0x63
+CPU_TEMP_OFFSET = 0x57
+GPU_TEMP_OFFSET = 0xB7
+
+# Velocidad maxima de cada ventilador en unidades de 100 RPM
+FAN1_MAX = 55
+FAN2_MAX = 57
+
+DEFAULT_CONFIG = {
+    "poll_interval": 2.0,
+    "battery": {
+        "temp_curve": [58, 60, 75, 85, 92, 96],
+        "speed_curve": [0, 20, 34, 55, 80, 100],
+        "idle_speed": 0,
+    },
+    "ac": {
+        "temp_curve": [50, 60, 70, 78, 85, 92],
+        "speed_curve": [18, 32, 52, 70, 88, 100],
+        "idle_speed": 18,
+    },
+}
+
+
+def log(msg):
+    print(f"omen-fand2: {msg}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# systemd sd_notify (opcional; si no hay NOTIFY_SOCKET no hace nada)
+# ---------------------------------------------------------------------------
+_notify_sock = None
+_notify_addr = os.environ.get("NOTIFY_SOCKET")
+
+
+def sd_notify(state: str):
+    global _notify_sock
+    if not _notify_addr:
+        return
+    try:
+        if _notify_sock is None:
+            _notify_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        addr = _notify_addr
+        if addr.startswith("@"):
+            addr = "\0" + addr[1:]
+        _notify_sock.sendto(state.encode(), addr)
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# EC helpers
+# ---------------------------------------------------------------------------
+def ec_read(offset: int) -> int:
+    with open(ECIO_FILE, "rb") as ec:
+        ec.seek(offset)
+        return ec.read(1)[0]
+
+
+def ec_write(offset: int, value: int):
+    with open(ECIO_FILE, "r+b") as ec:
+        ec.seek(offset)
+        ec.write(bytes([max(0, min(255, int(value)))]))
+
+
+def bios_control(enabled: bool):
+    if enabled:
+        ec_write(BIOS_OFFSET, 0)
+        ec_write(FAN1_OFFSET, 0)
+        ec_write(FAN2_OFFSET, 0)
+    else:
+        ec_write(BIOS_OFFSET, 6)
+        time.sleep(0.05)
+        ec_write(TIMER_OFFSET, 0)
+
+
+def set_fans(percent: float):
+    percent = max(0.0, min(100.0, percent))
+    ec_write(FAN1_OFFSET, round(FAN1_MAX * percent / 100))
+    ec_write(FAN2_OFFSET, round(FAN2_MAX * percent / 100))
+
+
+def get_nvme_temps() -> list:
+    """Temperatura 'Composite' de cada SSD NVMe via hwmon (sysfs)."""
+    temps = []
+    base = "/sys/class/hwmon"
+    try:
+        entries = os.listdir(base)
+    except OSError:
+        return temps
+    for entry in entries:
+        try:
+            with open(os.path.join(base, entry, "name")) as f:
+                if f.read().strip() != "nvme":
+                    continue
+            with open(os.path.join(base, entry, "temp1_input")) as f:
+                temps.append(int(f.read().strip()) // 1000)
+        except (OSError, ValueError):
+            continue
+    return temps
+
+
+def get_temp() -> int:
+    cpu = ec_read(CPU_TEMP_OFFSET)
+    gpu = ec_read(GPU_TEMP_OFFSET)
+    vals = [t for t in (cpu, gpu, *get_nvme_temps()) if 0 < t < 120]
+    if not vals:
+        return -1  # lectura invalida
+    return max(vals)
+
+
+def on_ac() -> bool:
+    try:
+        with open(AC_ONLINE_FILE) as f:
+            return f.read().strip() == "1"
+    except OSError:
+        return True  # ante la duda, asumir AC (curva mas fresca)
+
+
+# ---------------------------------------------------------------------------
+# Curva
+# ---------------------------------------------------------------------------
+def load_config():
+    cfg = DEFAULT_CONFIG
+    try:
+        with open(CONFIG_FILE, "rb") as f:
+            user = tomllib.load(f)
+        for key in ("poll_interval",):
+            if key in user:
+                cfg[key] = user[key]
+        for profile in ("ac", "battery"):
+            if profile in user:
+                cfg[profile].update(user[profile])
+    except FileNotFoundError:
+        log(f"{CONFIG_FILE} no existe, uso curvas por defecto")
+    except (tomllib.TOMLDecodeError, TypeError) as e:
+        log(f"config invalida ({e}), uso curvas por defecto")
+
+    for profile in ("ac", "battery"):
+        tc = cfg[profile]["temp_curve"]
+        sc = cfg[profile]["speed_curve"]
+        if len(tc) != len(sc) or len(tc) < 2:
+            raise SystemExit(f"curva '{profile}' invalida: longitudes {len(tc)}/{len(sc)}")
+        if any(tc[i] >= tc[i + 1] for i in range(len(tc) - 1)):
+            raise SystemExit(f"curva '{profile}': temp_curve debe ser ascendente")
+    return cfg
+
+
+def interp(temp: int, temp_curve, speed_curve, idle_speed) -> float:
+    if temp <= temp_curve[0]:
+        return float(idle_speed)
+    if temp >= temp_curve[-1]:
+        return float(speed_curve[-1])
+    for i in range(1, len(temp_curve)):
+        if temp <= temp_curve[i]:
+            x0, x1 = temp_curve[i - 1], temp_curve[i]
+            y0, y1 = speed_curve[i - 1], speed_curve[i]
+            return y0 + (y1 - y0) * (temp - x0) / (x1 - x0)
+    return float(speed_curve[-1])
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+_running = True
+
+
+def _stop(signum, frame):
+    global _running
+    _running = False
+
+
+def main():
+    if os.geteuid() != 0:
+        raise SystemExit("se necesita root")
+
+    if not os.access(ECIO_FILE, os.W_OK):
+        raise SystemExit(f"{ECIO_FILE} no escribible; falta 'modprobe ec_sys write_support=1'")
+
+    cfg = load_config()
+    poll = float(cfg["poll_interval"])
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
+    log(f"iniciado (poll={poll}s). Curva AC: {cfg['ac']['temp_curve']} -> "
+        f"{cfg['ac']['speed_curve']}; bateria: {cfg['battery']['temp_curve']} -> "
+        f"{cfg['battery']['speed_curve']}")
+    sd_notify("READY=1")
+
+    last_speed = None
+    last_src = None
+    try:
+        while _running:
+            bios_control(False)  # asegurar control manual antes de tocar RPM
+            src = "ac" if on_ac() else "battery"
+            p = cfg[src]
+            temp = get_temp()
+
+            if temp < 0:
+                speed = 50.0  # lectura mala -> velocidad segura
+                log("lectura de temperatura invalida, fijo 50%")
+            else:
+                speed = interp(temp, p["temp_curve"], p["speed_curve"], p["idle_speed"])
+
+            speed = round(speed)
+            if speed != last_speed or src != last_src:
+                set_fans(speed)
+                log(f"{src.upper():7s} temp={temp}C -> {speed}%")
+                last_speed, last_src = speed, src
+
+            sd_notify("WATCHDOG=1")
+            time.sleep(poll)
+    finally:
+        log("parando, devuelvo control al BIOS")
+        try:
+            bios_control(True)
+        except OSError as e:
+            log(f"no pude restaurar control BIOS: {e}")
+
+
+if __name__ == "__main__":
+    main()

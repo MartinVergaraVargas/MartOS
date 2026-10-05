@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Devuelve el control de los ventiladores al BIOS. Se usa como red de
+seguridad (ExecStopPost) y se puede lanzar a mano si algo va mal."""
+import sys
+import time
+
+ECIO_FILE = "/sys/kernel/debug/ec/ec0/io"
+BIOS_OFFSET = 0x62
+FAN1_OFFSET = 0x34
+FAN2_OFFSET = 0x35
+
+try:
+    with open(ECIO_FILE, "r+b") as ec:
+        ec.seek(BIOS_OFFSET)
+        ec.write(bytes([0]))
+        time.sleep(0.05)
+        ec.seek(FAN1_OFFSET)
+        ec.write(bytes([0]))
+        ec.seek(FAN2_OFFSET)
+        ec.write(bytes([0]))
+    print("omen-fan-restore: control BIOS restaurado")
+except OSError as e:
+    print(f"omen-fan-restore: error {e}", file=sys.stderr)
+    sys.exit(1)

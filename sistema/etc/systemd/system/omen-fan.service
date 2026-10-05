@@ -1,0 +1,19 @@
+[Unit]
+Description=OMEN 16 fan curve daemon (AC/battery aware)
+Documentation=https://github.com/alou-S/omen-fan
+After=multi-user.target
+ConditionVirtualization=false
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStartPre=/sbin/modprobe ec_sys write_support=1
+ExecStart=/usr/local/bin/omen-fand2
+ExecStopPost=/usr/local/bin/omen-fan-restore
+WatchdogSec=20
+Restart=always
+RestartSec=2
+# Si el proceso muere de golpe, systemd relanza; el daemon reevalua al arrancar.
+
+[Install]
+WantedBy=multi-user.target

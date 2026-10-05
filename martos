@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+# martos — gestor de la configuración de MartOS (OMEN 16, Ubuntu 24.04)
+#
+# El repositorio (~/.config/MartOS) es la fuente de verdad:
+#   sistema/   → réplica de / con SOLO los archivos personalizados. Se COPIAN
+#                con dueño root (no symlinks: un symlink /etc → $HOME permitiría
+#                a cualquier proceso de tu usuario escalar a root).
+#   usuario/   → réplica de $HOME. Se ENLAZAN con symlinks (editas aquí y
+#                el cambio está vivo al instante).
+#   gnome/     → volcados dconf de los ajustes de escritorio.
+#   personalizacion/ → fondos y temas de Plymouth.
+#
+# Uso: martos <orden>   (ver `martos ayuda`)
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+SISTEMA="$REPO/sistema"
+USUARIO="$REPO/usuario"
+GNOME="$REPO/gnome"
+PLY="$REPO/personalizacion/plymouth"
+PLY_UPSTREAM="https://github.com/adi1090x/plymouth-themes"
+
+# Directorios de usuario que se enlazan enteros (no archivo a archivo)
+LINK_DIRS=(.bashrc.d)
+
+if [ -t 1 ]; then
+    R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; B=$'\e[1;34m'; N=$'\e[0m'
+else
+    R=; G=; Y=; B=; N=
+fi
+
+info() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }
+warn() { printf '%s!!%s  %s\n' "$Y" "$N" "$*" >&2; }
+die()  { printf '%sERROR:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
+
+need_root()    { [ "$(id -u)" -eq 0 ] || die "esta orden necesita root: sudo $0 $*"; }
+need_nonroot() { [ "$(id -u)" -ne 0 ] || die "ejecútala como tu usuario, sin sudo"; }
+
+# Lista los archivos de sistema/ como rutas relativas (etc/..., usr/...)
+sistema_files() { (cd "$SISTEMA" && find . -type f -printf '%P\n' | sort); }
+
+# Archivos de usuario/ a enlazar (excluye el contenido de LINK_DIRS) + los LINK_DIRS
+usuario_targets() {
+    local d prune=()
+    for d in "${LINK_DIRS[@]}"; do prune+=(-path "./$d" -prune -o); done
+    (cd "$USUARIO" && find . "${prune[@]}" -type f -printf '%P\n' | sort)
+    printf '%s\n' "${LINK_DIRS[@]}"
+}
+
+# ---------------------------------------------------------------------------
+# estado / diff
+# ---------------------------------------------------------------------------
+cmd_estado() {
+    local f n_ok=0 n_diff=0 n_falta=0
+    info "Sistema (repo → /)"
+    while read -r f; do
+        if [ ! -e "/$f" ]; then
+            printf '  %sFALTA%s      /%s\n' "$R" "$N" "$f"; n_falta=$((n_falta+1))
+        elif cmp -s "$SISTEMA/$f" "/$f"; then
+            n_ok=$((n_ok+1))
+        else
+            printf '  %sDIFERENTE%s  /%s\n' "$Y" "$N" "$f"; n_diff=$((n_diff+1))
+        fi
+    done < <(sistema_files)
+    printf '  %s%d iguales%s, %d diferentes, %d sin instalar\n' "$G" "$n_ok" "$N" "$n_diff" "$n_falta"
+
+    info "Usuario (symlinks en \$HOME)"
+    local t want
+    while read -r t; do
+        want="$USUARIO/$t"
+        if [ "$(readlink "$HOME/$t" 2>/dev/null)" = "$want" ]; then
+            printf '  %sOK%s         ~/%s\n' "$G" "$N" "$t"
+        elif [ -e "$HOME/$t" ]; then
+            printf '  %sSIN ENLAZAR%s ~/%s (existe, pero no apunta al repo)\n' "$Y" "$N" "$t"
+        else
+            printf '  %sFALTA%s      ~/%s\n' "$R" "$N" "$t"
+        fi
+    done < <(usuario_targets)
+    echo
+    echo "Detalle de diferencias: $0 diff [ruta]"
+}
+
+cmd_diff() {
+    local f filter="${1:-}"
+    while read -r f; do
+        [ -n "$filter" ] && [[ "/$f" != *"$filter"* ]] && continue
+        [ -e "/$f" ] || { echo "--- /$f no existe en el sistema"; continue; }
+        cmp -s "$SISTEMA/$f" "/$f" && continue
+        diff -u --label "sistema actual: /$f" --label "repo: sistema/$f" "/$f" "$SISTEMA/$f" || true
+    done < <(sistema_files)
+}
+
+# ---------------------------------------------------------------------------
+# sistema: instala sistema/ → /  (root)
+# ---------------------------------------------------------------------------
+cmd_sistema() {
+    need_root sistema
+    local ts backup f mode changed=()
+    ts="$(date +%Y%m%d-%H%M%S)"
+    backup="/var/backups/martos/$ts"
+
+    while read -r f; do
+        if [ -e "/$f" ] && cmp -s "$SISTEMA/$f" "/$f"; then continue; fi
+        if [ -e "/$f" ]; then
+            install -D -m 600 "/$f" "$backup/$f"
+        fi
+        if [ -x "$SISTEMA/$f" ]; then mode=755; else mode=644; fi
+        install -D -o root -g root -m "$mode" "$SISTEMA/$f" "/$f"
+        echo "  instalado /$f"
+        changed+=("/$f")
+    done < <(sistema_files)
+
+    if [ "${#changed[@]}" -eq 0 ]; then
+        info "Nada que cambiar: el sistema ya coincide con el repo."
+    else
+        [ -d "$backup" ] && info "Copia de lo sobrescrito en $backup"
+        post_install "${changed[@]}"
+    fi
+    enable_services
+}
+
+# Acciones posteriores según qué archivos hayan cambiado
+post_install() {
+    local all=" $* " reboot=0
+    has() { [[ "$all" == *"$1"* ]]; }
+
+    if has /etc/systemd/system/; then systemctl daemon-reload; fi
+    if has /etc/udev/rules.d/; then udevadm control --reload; fi
+    if has /etc/sysctl.d/; then sysctl --system >/dev/null; fi
+    if has /etc/modules-load.d/ || has /etc/modprobe.d/ || has /etc/initramfs-tools/; then
+        info "Regenerando initramfs (módulos del kernel cambiados)…"
+        update-initramfs -u
+        reboot=1
+    fi
+    if has /etc/default/grub; then update-grub; reboot=1; fi
+    if has /etc/omen-fan/ || has /usr/local/bin/omen-fan || has omen-fan.service; then
+        systemctl restart omen-fan.service || warn "omen-fan no arrancó: journalctl -u omen-fan"
+    fi
+    if has /etc/intel-undervolt.conf; then intel-undervolt apply || warn "intel-undervolt apply falló"; fi
+    if has /etc/auto-cpufreq.conf; then systemctl restart auto-cpufreq.service || true; fi
+    if has /etc/thermald/; then systemctl restart thermald.service || true; fi
+    if has /etc/smartd.conf || has /etc/default/smartmontools; then systemctl restart smartmontools.service || true; fi
+    if has /etc/nvidia-power-limit.conf || has nvidia-power-limit; then systemctl start nvidia-power-limit.service || true; fi
+    if has /etc/bluetooth/; then systemctl restart bluetooth.service || true; fi
+    # logind, gdm3, zram, environment, tmp.mount: no se reinician en caliente
+    # (cortaría la sesión gráfica); se aplican al reiniciar.
+    if has /etc/systemd/logind.conf || has /etc/gdm3/ || has zram-generator || has /etc/environment || has tmp.mount; then
+        reboot=1
+    fi
+    [ "$reboot" -eq 1 ] && warn "Algunos cambios se aplican al REINICIAR."
+    return 0
+}
+
+enable_services() {
+    local u
+    # power-profiles-daemon choca con auto-cpufreq
+    systemctl is-enabled power-profiles-daemon.service 2>/dev/null | grep -q masked \
+        || systemctl mask power-profiles-daemon.service 2>/dev/null || true
+    for u in omen-fan.service nvidia-power-limit.service intel-undervolt.service \
+             auto-cpufreq.service thermald.service tmp.mount; do
+        if systemctl cat "$u" >/dev/null 2>&1; then
+            systemctl is-enabled -q "$u" 2>/dev/null || { systemctl enable "$u" && echo "  habilitado $u"; }
+        else
+            warn "$u no existe (¿falta instalar su programa? ver INFORME.md)"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# importar: copia al repo lo que hayas editado directamente en /etc
+# ---------------------------------------------------------------------------
+cmd_importar() {
+    need_nonroot
+    local f n=0 filter="${1:-}"
+    while read -r f; do
+        [ -n "$filter" ] && [[ "/$f" != *"$filter"* ]] && continue
+        [ -r "/$f" ] || continue
+        cmp -s "$SISTEMA/$f" "/$f" && continue
+        cp -p "/$f" "$SISTEMA/$f"; echo "  importado /$f"; n=$((n+1))
+    done < <(sistema_files)
+    info "$n archivos importados. Revisa con: git -C \"$REPO\" diff"
+}
+
+# ---------------------------------------------------------------------------
+# usuario: symlinks $HOME → usuario/
+# ---------------------------------------------------------------------------
+cmd_usuario() {
+    need_nonroot
+    local t src dst backup
+    backup="$HOME/.local/state/martos/backup-$(date +%Y%m%d-%H%M%S)"
+    while read -r t; do
+        src="$USUARIO/$t"; dst="$HOME/$t"
+        [ "$(readlink "$dst" 2>/dev/null)" = "$src" ] && continue
+        if [ -e "$dst" ] || [ -L "$dst" ]; then
+            mkdir -p "$(dirname "$backup/$t")"
+            mv "$dst" "$backup/$t"
+        fi
+        mkdir -p "$(dirname "$dst")"
+        ln -s "$src" "$dst"
+        echo "  ~/$t → $src"
+    done < <(usuario_targets)
+    [ -d "$backup" ] && info "Originales guardados en $backup"
+    info "Listo. Abre una terminal nueva para ver los cambios de bash."
+}
+
+# ---------------------------------------------------------------------------
+# gnome: carga los ajustes dconf y el fondo
+# ---------------------------------------------------------------------------
+cmd_gnome() {
+    need_nonroot
+    local ini path
+    for ini in "$GNOME"/dconf-*.ini; do
+        # dconf-desktop.wm.keybindings.ini → /org/gnome/desktop/wm/keybindings/
+        path="/org/gnome/$(basename "$ini" .ini | sed 's/^dconf-//; s/\./\//g')/"
+        dconf load "$path" < "$ini" && echo "  cargado $path"
+    done
+    if [ ! -e "$HOME/.config/background" ]; then
+        cp "$REPO/personalizacion/fondos/horizon_upscayl_2x_digital-art-4x.png" "$HOME/.config/background"
+        echo "  fondo restaurado en ~/.config/background"
+    fi
+}
+
+cmd_gnome_volcar() {
+    need_nonroot
+    local ini path
+    for ini in "$GNOME"/dconf-*.ini; do
+        path="/org/gnome/$(basename "$ini" .ini | sed 's/^dconf-//; s/\./\//g')/"
+        dconf dump "$path" > "$ini"
+    done
+    info "Volcados actualizados. Revisa con: git -C \"$REPO\" diff gnome/"
+}
+
+# ---------------------------------------------------------------------------
+# plymouth
+# ---------------------------------------------------------------------------
+find_theme() {
+    local d
+    for d in "$PLY/temas/$1" "$PLY"/packs/pack_*/"$1"; do
+        [ -f "$d/$1.plymouth" ] && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
+cmd_plymouth() {
+    local sub="${1:-listar}"; shift || true
+    case "$sub" in
+        listar)
+            info "Tema activo: $(basename "$(readlink -f /usr/share/plymouth/themes/default.plymouth)" .plymouth)"
+            info "Temas guardados en el repo (temas/):"; ls "$PLY/temas" | sed 's/^/  /'
+            if compgen -G "$PLY/packs/pack_*" >/dev/null; then
+                info "Temas en los packs descargados:"
+                for p in "$PLY"/packs/pack_*; do printf '  %s: %s\n' "$(basename "$p")" "$(ls "$p" | tr '\n' ' ')"; done
+            else
+                warn "Packs no descargados. Ejecuta: $0 plymouth descargar"
+            fi ;;
+        descargar)
+            need_nonroot
+            local tmp; tmp="$(mktemp -d)"
+            git clone --depth 1 "$PLY_UPSTREAM" "$tmp/pt"
+            mkdir -p "$PLY/packs"
+            for p in "$tmp"/pt/pack_*; do rm -rf "$PLY/packs/$(basename "$p")"; mv "$p" "$PLY/packs/"; done
+            rm -rf "$tmp"; info "Packs descargados en $PLY/packs" ;;
+        instalar)
+            need_root plymouth instalar
+            local name="${1:?indica el tema: martos plymouth instalar <tema>}" src dst
+            src="$(find_theme "$name")" || die "tema '$name' no encontrado (martos plymouth listar)"
+            dst="/usr/share/plymouth/themes/$name"
+            rm -rf "$dst"; cp -r "$src" "$dst"; chown -R root:root "$dst"
+            update-alternatives --install /usr/share/plymouth/themes/default.plymouth default.plymouth "$dst/$name.plymouth" 100
+            update-alternatives --set default.plymouth "$dst/$name.plymouth"
+            info "Regenerando initramfs…"; update-initramfs -u
+            info "Tema '$name' activo. Se verá en el próximo arranque." ;;
+        probar)
+            need_root plymouth probar
+            plymouthd; plymouth --show-splash; sleep "${1:-6}"; plymouth quit ;;
+        *) die "subórdenes: listar | descargar | instalar <tema> | probar [segundos]" ;;
+    esac
+}
+
+cmd_ayuda() {
+    cat <<EOF
+martos — configuración de MartOS centralizada en $REPO
+
+  martos estado               qué coincide y qué difiere entre repo y sistema
+  martos diff [texto]         diferencias detalladas (filtra por ruta)
+  sudo martos sistema         instala sistema/ en / (con copia de seguridad)
+  martos importar [texto]     trae al repo cambios hechos a mano en /etc
+  martos usuario              enlaza bash, git… de \$HOME al repo (symlinks)
+  martos gnome                carga atajos/ajustes de GNOME y el fondo
+  martos gnome-volcar         guarda en el repo los ajustes GNOME actuales
+  martos plymouth listar      temas disponibles y tema activo
+  martos plymouth descargar   descarga los 4 packs de adi1090x (~280 MB)
+  sudo martos plymouth instalar <tema>
+  sudo martos plymouth probar [segundos]
+
+Flujo habitual: editar en el repo → (sudo) martos sistema → git commit → git push
+Documentación completa: $REPO/INFORME.md
+EOF
+}
+
+case "${1:-ayuda}" in
+    estado)        shift; cmd_estado "$@" ;;
+    diff)          shift; cmd_diff "$@" ;;
+    sistema)       shift; cmd_sistema "$@" ;;
+    importar)      shift; cmd_importar "$@" ;;
+    usuario)       shift; cmd_usuario "$@" ;;
+    gnome)         shift; cmd_gnome "$@" ;;
+    gnome-volcar)  shift; cmd_gnome_volcar "$@" ;;
+    plymouth)      shift; cmd_plymouth "$@" ;;
+    ayuda|-h|--help) cmd_ayuda ;;
+    *) die "orden desconocida '$1' (martos ayuda)" ;;
+esac

@@ -1,0 +1,11 @@
+# Packs de Plymouth completos (~280 MB): se re-descargan con `martos plymouth descargar`.
+# Los temas en uso sí se guardan en personalizacion/plymouth/temas/.
+personalizacion/plymouth/packs/
+
+# Secretos: NUNCA al repo. ~/.config/env (API keys) se respalda aparte.
+.env
+env
+*.key
+*token*
+
+.claude/settings.local.json

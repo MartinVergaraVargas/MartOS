@@ -1,0 +1,10 @@
+[Unit]
+Description=Limite de potencia de la GPU NVIDIA segun la fuente de energia
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nvidia-power-limit.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+# ~/.bashrc: ejecutado por bash(1) para shells interactivos no-login.
+# Ver /usr/share/doc/bash/examples/startup-files para ejemplos.
+
+# Si no es una sesión interactiva, no hacer nada.
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# ---------------------------------------------------------------------------
+# Conda (se deja aquí, sin modularizar, porque 'conda init' gestiona este
+# bloque buscando sus marcadores justamente en ~/.bashrc).
+# ---------------------------------------------------------------------------
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/opt/miniconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/opt/miniconda3/etc/profile.d/conda.sh" ]; then
+        . "/opt/miniconda3/etc/profile.d/conda.sh"
+    else
+        export PATH="/opt/miniconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+
+# ---------------------------------------------------------------------------
+# Cargar el resto de la configuración desde ~/.bashrc.d/ en orden alfabético.
+# Para añadir configuración nueva, basta con crear un archivo .sh ahí dentro.
+# ---------------------------------------------------------------------------
+if [ -d "$HOME/.bashrc.d" ]; then
+    for _rc in "$HOME/.bashrc.d/"*.sh; do
+        [ -r "$_rc" ] && . "$_rc"
+    done
+    unset _rc
+fi
