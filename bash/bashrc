@@ -1,4 +1,4 @@
-# ~/.bashrc: ejecutado por bash(1) para shells interactivos no-login.
+# ~/.config/MartOS/bash/bashrc (enlazado como ~/.bashrc): ejecutado por bash(1) para shells interactivos no-login.
 # Ver /usr/share/doc/bash/examples/startup-files para ejemplos.
 
 # Si no es una sesión interactiva, no hacer nada.
@@ -27,11 +27,13 @@ unset __conda_setup
 # <<< conda initialize <<<
 
 # ---------------------------------------------------------------------------
-# Cargar el resto de la configuración desde ~/.bashrc.d/ en orden alfabético.
-# Para añadir configuración nueva, basta con crear un archivo .sh ahí dentro.
+# Cargar los módulos de ~/.config/MartOS/bash/ (NN-nombre.sh) en orden.
+# Para añadir configuración nueva, basta con crear ahí un archivo NN-algo.sh.
+# (~/.bashrc es un symlink a ~/.config/MartOS/bash/bashrc)
 # ---------------------------------------------------------------------------
-if [ -d "$HOME/.bashrc.d" ]; then
-    for _rc in "$HOME/.bashrc.d/"*.sh; do
+MARTOS_BASH="${XDG_CONFIG_HOME:-$HOME/.config}/MartOS/bash"
+if [ -d "$MARTOS_BASH" ]; then
+    for _rc in "$MARTOS_BASH"/[0-9][0-9]-*.sh; do
         [ -r "$_rc" ] && . "$_rc"
     done
     unset _rc

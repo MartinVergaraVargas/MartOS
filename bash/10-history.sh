@@ -1,4 +1,4 @@
-# ~/.bashrc.d/10-history.sh
+# ~/.config/MartOS/bash/10-history.sh
 # Configuración del historial de comandos
 
 HISTCONTROL=ignoreboth        # sin duplicados ni líneas que empiecen por espacio

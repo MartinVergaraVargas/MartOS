@@ -1,4 +1,4 @@
-# ~/.bashrc.d/00-shell-options.sh
+# ~/.config/MartOS/bash/00-shell-options.sh
 # Opciones de shell y utilidades varias
 
 shopt -s checkwinsize         # actualizar LINES/COLUMNS tras cada comando

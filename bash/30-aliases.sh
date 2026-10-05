@@ -1,4 +1,4 @@
-# ~/.bashrc.d/30-aliases.sh
+# ~/.config/MartOS/bash/30-aliases.sh
 # Colores de ls y aliases
 
 # Soporte de color en ls/grep

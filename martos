@@ -21,8 +21,13 @@ GNOME="$REPO/gnome"
 PLY="$REPO/personalizacion/plymouth"
 PLY_UPSTREAM="https://github.com/adi1090x/plymouth-themes"
 
-# Directorios de usuario que se enlazan enteros (no archivo a archivo)
-LINK_DIRS=(.bashrc.d)
+# Symlinks de $HOME → repo:  "ruta en el repo|ruta en $HOME"
+# Además, todo archivo dentro de usuario/ se enlaza en la misma ruta de $HOME.
+LINKS=(
+    "bash/bashrc|.bashrc"
+    "bash/profile|.profile"
+    "bash/bash_logout|.bash_logout"
+)
 
 if [ -t 1 ]; then
     R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; B=$'\e[1;34m'; N=$'\e[0m'
@@ -40,12 +45,13 @@ need_nonroot() { [ "$(id -u)" -ne 0 ] || die "ejecútala como tu usuario, sin su
 # Lista los archivos de sistema/ como rutas relativas (etc/..., usr/...)
 sistema_files() { (cd "$SISTEMA" && find . -type f -printf '%P\n' | sort); }
 
-# Archivos de usuario/ a enlazar (excluye el contenido de LINK_DIRS) + los LINK_DIRS
+# Pares "origen absoluto en el repo|destino relativo a $HOME"
 usuario_targets() {
-    local d prune=()
-    for d in "${LINK_DIRS[@]}"; do prune+=(-path "./$d" -prune -o); done
-    (cd "$USUARIO" && find . "${prune[@]}" -type f -printf '%P\n' | sort)
-    printf '%s\n' "${LINK_DIRS[@]}"
+    local l f
+    for l in "${LINKS[@]}"; do printf '%s|%s\n' "$REPO/${l%%|*}" "${l#*|}"; done
+    (cd "$USUARIO" && find . -type f -printf '%P\n' | sort) | while read -r f; do
+        printf '%s|%s\n' "$USUARIO/$f" "$f"
+    done
 }
 
 # ---------------------------------------------------------------------------
@@ -67,8 +73,7 @@ cmd_estado() {
 
     info "Usuario (symlinks en \$HOME)"
     local t want
-    while read -r t; do
-        want="$USUARIO/$t"
+    while IFS='|' read -r want t; do
         if [ "$(readlink "$HOME/$t" 2>/dev/null)" = "$want" ]; then
             printf '  %sOK%s         ~/%s\n' "$G" "$N" "$t"
         elif [ -e "$HOME/$t" ]; then
@@ -189,8 +194,8 @@ cmd_usuario() {
     need_nonroot
     local t src dst backup
     backup="$HOME/.local/state/martos/backup-$(date +%Y%m%d-%H%M%S)"
-    while read -r t; do
-        src="$USUARIO/$t"; dst="$HOME/$t"
+    while IFS='|' read -r src t; do
+        dst="$HOME/$t"
         [ "$(readlink "$dst" 2>/dev/null)" = "$src" ] && continue
         if [ -e "$dst" ] || [ -L "$dst" ]; then
             mkdir -p "$(dirname "$backup/$t")"
@@ -286,7 +291,7 @@ martos — configuración de MartOS centralizada en $REPO
   martos diff [texto]         diferencias detalladas (filtra por ruta)
   sudo martos sistema         instala sistema/ en / (con copia de seguridad)
   martos importar [texto]     trae al repo cambios hechos a mano en /etc
-  martos usuario              enlaza bash, git… de \$HOME al repo (symlinks)
+  martos usuario              crea los symlinks ~/.bashrc, ~/.profile… → repo
   martos gnome                carga atajos/ajustes de GNOME y el fondo
   martos gnome-volcar         guarda en el repo los ajustes GNOME actuales
   martos plymouth listar      temas disponibles y tema activo

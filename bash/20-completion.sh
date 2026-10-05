@@ -1,4 +1,4 @@
-# ~/.bashrc.d/20-completion.sh
+# ~/.config/MartOS/bash/20-completion.sh
 # Autocompletado programable
 
 if ! shopt -oq posix; then

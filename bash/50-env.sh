@@ -1,4 +1,4 @@
-# ~/.bashrc.d/50-env.sh
+# ~/.config/MartOS/bash/50-env.sh
 # Variables de entorno y PATH
 
 # Cargar variables extra si existen

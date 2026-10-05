@@ -1,4 +1,4 @@
-# ~/.bashrc.d/60-prompt.sh
+# ~/.config/MartOS/bash/60-prompt.sh
 # Prompt personalizado (controla PS1 vía PROMPT_COMMAND)
 
 __build_prompt() {

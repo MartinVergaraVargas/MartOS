@@ -10,7 +10,8 @@ Repositorio: `~/.config/MartOS` · Gestor: `./martos` (ver `./martos ayuda`).
 | Carpeta | Qué contiene | Cómo llega al sistema |
 |---|---|---|
 | `sistema/` | Réplica de `/` con **solo** los archivos que hemos tocado (`etc/…`, `usr/local/bin/…`) | `sudo ./martos sistema` los **copia** con dueño root, guardando antes lo que sobrescribe en `/var/backups/martos/<fecha>/` |
-| `usuario/` | Réplica de `$HOME`: bash, git, autostart | `./martos usuario` crea **symlinks** `~/.bashrc → usuario/.bashrc`, etc. |
+| `bash/` | Toda la configuración de la terminal: `bashrc`, `profile`, `bash_logout`, módulos `NN-*.sh`, `logos/` | `./martos usuario` crea los symlinks `~/.bashrc`, `~/.profile`, `~/.bash_logout` → `bash/`. Los módulos se cargan **directamente desde aquí** |
+| `usuario/` | Otros archivos de `$HOME` (git, autostart) | `./martos usuario` los enlaza en la misma ruta de `$HOME` |
 | `gnome/` | Volcados `dconf` (atajos, dock, extensiones…) | `./martos gnome` los carga; `./martos gnome-volcar` los actualiza |
 | `personalizacion/` | Fondos y temas de Plymouth | `sudo ./martos plymouth instalar <tema>` |
 | `instalacion/` | Script de instalación original (referencia) | manual |
@@ -114,22 +115,25 @@ auto-cpufreq se instala desde [AdnanHodzic/auto-cpufreq](https://github.com/Adna
 
 ### 2.7 Terminal (bash)
 
-Estructura modular: `~/.bashrc` solo contiene el bloque de conda (que `conda init` exige ahí) y
-después carga **en orden** cada `~/.bashrc.d/*.sh`.
+Todo vive en `~/.config/MartOS/bash/`. Bash solo lee `~/.bashrc` y `~/.profile` de tu home, así que esos dos
+son **symlinks** al repo. `bashrc` contiene el bloque de conda (que `conda init` exige ahí) y después carga
+**en orden** cada `~/.config/MartOS/bash/NN-*.sh` (variable `$MARTOS_BASH`). Ya no existe `~/.bashrc.d`.
 
 | Archivo | Función |
 |---|---|
-| `usuario/.profile` | Shell de login: carga `.bashrc`, añade `~/bin` y `~/.local/bin` al PATH (sin duplicar) y Rust. |
-| `usuario/.bashrc` | Sale si la shell no es interactiva; inicializa conda (`/opt/miniconda3`); carga `.bashrc.d/`. |
-| `.bashrc.d/00-shell-options.sh` | `checkwinsize`, `umask 002`, `lesspipe`. |
-| `.bashrc.d/10-history.sh` | Historial sin duplicados, en modo añadir, 1000/2000 líneas. |
-| `.bashrc.d/20-completion.sh` | Autocompletado de bash. |
-| `.bashrc.d/30-aliases.sh` | Colores en `ls`/`grep`, `ll`/`la`/`l`, `alert`, y `blanco-teclado`/`verde-teclado` (RGB). |
-| `.bashrc.d/50-env.sh` | Carga `~/.config/env` (API keys, **fuera de git**); variables de bioinformática (`FUNANNOTATE_DB`, `GENEMARK_PATH`, `EGGNOG_DATA_DIR`, `BUSCO_LINEAGES_PATH`, InterProScan en PATH); `~/.local/bin`; Rust. |
-| `.bashrc.d/60-prompt.sh` | Prompt de dos líneas: `(entorno conda) - ~/ruta` y ` Nesus ❯` en verde sobre magenta. |
-| `.bashrc.d/90-welcome.sh` | `fastfetch` con el logo ASCII `Geno-snap-50-1.txt`. |
+| `bash/profile` (= `~/.profile`) | Shell de login: carga `.bashrc`, añade `~/bin` y `~/.local/bin` al PATH (sin duplicar) y Rust. |
+| `bash/bashrc` (= `~/.bashrc`) | Sale si la shell no es interactiva; inicializa conda (`/opt/miniconda3`); carga los módulos `NN-*.sh`. |
+| `bash/bash_logout` (= `~/.bash_logout`) | Limpia la pantalla al salir de una consola de login (el de Ubuntu por defecto). |
+| `bash/00-shell-options.sh` | `checkwinsize`, `umask 002`, `lesspipe`. |
+| `bash/10-history.sh` | Historial sin duplicados, en modo añadir, 1000/2000 líneas. |
+| `bash/20-completion.sh` | Autocompletado de bash. |
+| `bash/30-aliases.sh` | Colores en `ls`/`grep`, `ll`/`la`/`l`, `alert`, y `blanco-teclado`/`verde-teclado` (RGB). |
+| `bash/50-env.sh` | Carga `~/.config/env` (API keys, **fuera de git**); variables de bioinformática (`FUNANNOTATE_DB`, `GENEMARK_PATH`, `EGGNOG_DATA_DIR`, `BUSCO_LINEAGES_PATH`, InterProScan en PATH); `~/.local/bin`; Rust. |
+| `bash/60-prompt.sh` | Prompt de dos líneas: `(entorno conda) - ~/ruta` y ` Nesus ❯` en verde sobre magenta. |
+| `bash/90-welcome.sh` | `fastfetch` con el logo ASCII `bash/logos/Geno-snap-50-1.txt` (`Geno-snap-1.txt` es la versión grande). |
 
-Para añadir algo nuevo: crea `usuario/.bashrc.d/NN-nombre.sh`; se carga en la próxima terminal.
+Para añadir algo nuevo: crea `~/.config/MartOS/bash/NN-nombre.sh`; se carga en la próxima terminal.
+Los módulos venían de `~/Downloads/bash/` (versión de junio) → `~/.bashrc.d/` (versión usada) → aquí.
 
 ### 2.8 Escritorio GNOME
 
@@ -163,7 +167,7 @@ Para añadir algo nuevo: crea `usuario/.bashrc.d/NN-nombre.sh`; se carga en la p
 3. `~/.cargo/env` se cargaba en `.profile` y al final de `.bashrc`, sin comprobar que existiera
    (en un sistema recién formateado daría error) → ahora con `[ -f … ]`, dentro de `50-env.sh`.
 4. `TMPDIR=/data/scratch` estaba en `/etc/environment` **y** en `.bashrc` → queda solo en `/etc/environment`.
-5. `~/.bashrc.d/bashrc` era una copia antigua de `.bashrc` → no se ha llevado al repo (está en la copia de seguridad).
+5. `~/.bashrc.d/bashrc` (carpeta ya retirada) era una copia antigua de `.bashrc` → no se ha llevado al repo (está en la copia de seguridad).
 
 ### Redundancias inofensivas (se dejan)
 6. `nvidia-drm.modeset=1` aparece en GRUB **y** en `modprobe.d`. Es lo mismo dos veces y no daña.
@@ -215,7 +219,7 @@ sudo apt install -y thermald smartmontools systemd-zram-generator lm-sensors \
 
 # 2. Configuración
 sudo ./martos sistema            # /etc + /usr/local/bin, habilita servicios
-./martos usuario                 # bash, git, autostart
+./martos usuario                 # symlinks de bash, git, autostart
 ./martos gnome                   # atajos, dock, fondo
 ./martos plymouth descargar      # opcional: los 80 temas
 sudo ./martos plymouth instalar cubes
