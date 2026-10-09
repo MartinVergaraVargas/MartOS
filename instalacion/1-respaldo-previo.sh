@@ -30,6 +30,24 @@ die()  { printf '%sERROR:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 [ "$(id -u)" -ne 0 ] || die "ejecútalo como tu usuario, sin sudo"
 [ -d "$(dirname "$DEST")" ] || die "no encuentro $(dirname "$DEST"): ¿está conectado el disco externo?"
 
+RSYNC=(rsync -aHAX --info=progress2 --no-inc-recursive --delete)
+EXCL_HOME=(--exclude='/.cache/' --exclude='/.local/share/Trash/'
+           --exclude='/.rustup/' --exclude='/.cargo/' --exclude='/Instaladores/*.iso'
+           --exclude='/.config/env' --exclude='/.ssh/' --exclude='/.gnupg/')
+SIN_PERMISO=0
+# rsync: 23 = algún archivo no se pudo leer (permisos), 24 = archivos que desaparecieron
+# durante la copia. Ninguno de los dos detiene el respaldo; cualquier otro código sí.
+copiar() {
+    local rc=0
+    "${RSYNC[@]}" "$@" || rc=$?
+    case $rc in
+        0)  ;;
+        23) SIN_PERMISO=1 ;;
+        24) warn "algunos archivos desaparecieron mientras se copiaban (normal si estaban en uso)" ;;
+        *)  die "rsync falló (código $rc) copiando $*" ;;
+    esac
+}
+
 if [ "$PARTE" != secretos ]; then
 # No copiar un pipeline a medio escribir
 if pgrep -af 'orchestrator.py|funannotate|spades|busco' >/dev/null; then
@@ -46,27 +64,27 @@ printf '  necesario ~%s · ya copiado %s · libre %s\n' \
     "$(numfmt --to=iec "$necesario")" "$(numfmt --to=iec "$ya")" "$(numfmt --to=iec "$libre")"
 [ $((necesario - ya)) -lt "$libre" ] || die "no cabe en $DEST"
 
-RSYNC=(rsync -aHAX --info=progress2 --no-inc-recursive --delete)
-
 info "1/4  Carpeta personal → $DEST/home"
-"${RSYNC[@]}" \
-    --exclude='/.cache/' --exclude='/.local/share/Trash/' \
-    --exclude='/.rustup/' --exclude='/.cargo/' \
-    --exclude='/Instaladores/*.iso' \
-    --exclude='/.config/env' --exclude='/.ssh/' --exclude='/.gnupg/' \
-    "$HOME/" "$DEST/home/"
+copiar "${EXCL_HOME[@]}" "$HOME/" "$DEST/home/"
 
 info "2/4  /srv/TFM → $DEST/Tricho-PGPT"
-"${RSYNC[@]}" /srv/TFM/ "$DEST/Tricho-PGPT/"
+copiar /srv/TFM/ "$DEST/Tricho-PGPT/"
 
 info "3/4  /srv/biodata → $DEST/biodata"
-"${RSYNC[@]}" /srv/biodata/ "$DEST/biodata/"
+copiar /srv/biodata/ "$DEST/biodata/"
+
+if [ "$SIN_PERMISO" -eq 1 ]; then
+    warn "Algunos archivos no se pudieron leer sin sudo (p. ej. la base MySQL de Specify en Docker)."
+    warn "Se copian en el paso de secretos:  bash $0 --solo-secretos"
+fi
 
 fi
 
 if [ "$PARTE" != datos ]; then
 info "4/4  Secretos cifrados → $DEST/secretos.tar.gpg"
 sudo -v   # pide aquí la contraseña de sudo, para que no se cruce con la de gpg
+echo "  Primero, con sudo, los archivos del home que tu usuario no puede leer (MySQL de Docker…):"
+sudo "${RSYNC[@]}" "${EXCL_HOME[@]}" "$HOME/" "$DEST/home/" || [ $? -eq 24 ]
 echo "  Elige una contraseña para este archivo (guárdala en tu gestor de contraseñas)."
 # tar devuelve 1 si algún archivo cambió mientras lo leía (normal en /etc): no es un error
 ( sudo tar -C / --warning=no-file-changed --warning=no-file-ignored -czf - \
@@ -80,10 +98,8 @@ fi
 info "Comprobación: segunda pasada en seco (debería no quedar nada por copiar)"
 pend=0
 for par in "$HOME/|$DEST/home/" "/srv/TFM/|$DEST/Tricho-PGPT/" "/srv/biodata/|$DEST/biodata/"; do
-    n=$(rsync -aHAXn --out-format='%n' --exclude='/.cache/' --exclude='/.local/share/Trash/' \
-          --exclude='/.rustup/' --exclude='/.cargo/' --exclude='/Instaladores/*.iso' \
-          --exclude='/.config/env' --exclude='/.ssh/' --exclude='/.gnupg/' \
-          "${par%%|*}" "${par#*|}" | grep -v '/$' | wc -l)
+    n=$(rsync -aHAXn --out-format='%n' "${EXCL_HOME[@]}" \
+          "${par%%|*}" "${par#*|}" 2>/dev/null | grep -v '/$' | wc -l)
     printf '  %-16s %s archivos pendientes\n' "${par%%|*}" "$n"
     pend=$((pend + n))
 done
