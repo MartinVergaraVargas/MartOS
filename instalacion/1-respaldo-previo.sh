@@ -8,12 +8,19 @@
 #   DEST/secretos.tar.gpg   ~/.config/env, ~/.ssh, ~/.gnupg y /etc completo (contraseñas Wi-Fi…),
 #                           cifrado con una contraseña que eliges al ejecutarlo
 #
-# Uso:  bash 1-respaldo-previo.sh [DEST]
+# Uso:  bash 1-respaldo-previo.sh [--sin-secretos | --solo-secretos] [DEST]
 #       (por defecto DEST=/media/nesus/Respaldos/Migracion-Mint)
+#       --sin-secretos   solo las copias grandes (no pide contraseñas: se puede dejar corriendo)
+#       --solo-secretos  solo secretos.tar.gpg (pide la contraseña de sudo y la del cifrado)
 # Se puede repetir: la segunda vez solo copia lo que haya cambiado.
 
 set -euo pipefail
 
+PARTE=todo
+case "${1:-}" in
+    --sin-secretos)  PARTE=datos;    shift ;;
+    --solo-secretos) PARTE=secretos; shift ;;
+esac
 DEST="${1:-/media/nesus/Respaldos/Migracion-Mint}"
 B=$'\e[1;34m'; Y=$'\e[33m'; R=$'\e[31m'; G=$'\e[32m'; N=$'\e[0m'
 info() { printf '\n%s==>%s %s\n' "$B" "$N" "$*"; }
@@ -23,6 +30,7 @@ die()  { printf '%sERROR:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 [ "$(id -u)" -ne 0 ] || die "ejecútalo como tu usuario, sin sudo"
 [ -d "$(dirname "$DEST")" ] || die "no encuentro $(dirname "$DEST"): ¿está conectado el disco externo?"
 
+if [ "$PARTE" != secretos ]; then
 # No copiar un pipeline a medio escribir
 if pgrep -af 'orchestrator.py|funannotate|spades|busco' >/dev/null; then
     pgrep -af 'orchestrator.py|funannotate|spades|busco'
@@ -54,6 +62,9 @@ info "2/4  /srv/TFM → $DEST/Tricho-PGPT"
 info "3/4  /srv/biodata → $DEST/biodata"
 "${RSYNC[@]}" /srv/biodata/ "$DEST/biodata/"
 
+fi
+
+if [ "$PARTE" != datos ]; then
 info "4/4  Secretos cifrados → $DEST/secretos.tar.gpg"
 sudo -v   # pide aquí la contraseña de sudo, para que no se cruce con la de gpg
 echo "  Elige una contraseña para este archivo (guárdala en tu gestor de contraseñas)."
@@ -62,6 +73,9 @@ echo "  Elige una contraseña para este archivo (guárdala en tu gestor de contr
       etc "${HOME#/}/.config/env" "${HOME#/}/.ssh" "${HOME#/}/.gnupg" 2>/dev/null; [ $? -le 1 ] ) |
     gpg --symmetric --cipher-algo AES256 --pinentry-mode loopback -o "$DEST/secretos.tar.gpg.nuevo"
 mv "$DEST/secretos.tar.gpg.nuevo" "$DEST/secretos.tar.gpg"
+
+fi
+[ "$PARTE" = secretos ] && { printf '%s✓ secretos.tar.gpg creado%s\n' "$G" "$N"; exit 0; }
 
 info "Comprobación: segunda pasada en seco (debería no quedar nada por copiar)"
 pend=0

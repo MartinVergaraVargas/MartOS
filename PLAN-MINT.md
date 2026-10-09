@@ -45,7 +45,7 @@ Los scripts están en `instalacion/` (en GitHub **y** en el disco externo, dentr
 |---|---|---|
 | A | Confirmar que no corre ningún pipeline (H10603) | el script 1 lo comprueba |
 | B | Subir MartOS a GitHub | `cd ~/.config/MartOS && git add -A && git commit && git push` |
-| C | **Respaldo al disco externo** | `bash ~/.config/MartOS/instalacion/1-respaldo-previo.sh` |
+| C | **Respaldo al disco externo** | `bash ~/.config/MartOS/instalacion/1-respaldo-previo.sh --sin-secretos` (datos, sin contraseñas) y luego `… --solo-secretos` (pide contraseñas) |
 | D | Comprobar que el respaldo de secretos se abre | `gpg -d …/Migracion-Mint/secretos.tar.gpg \| tar -tzf - \| head` |
 | E | Borrar la copia SIN cifrar de claves del disco | `rm /media/nesus/Respaldos/env` |
 
