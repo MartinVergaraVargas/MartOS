@@ -12,3 +12,6 @@ env
 
 __pycache__/
 *.tmp
+
+# Notas personales (respaldos, trabajo): solo en local
+Optimizacion/
