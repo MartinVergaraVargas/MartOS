@@ -93,3 +93,16 @@ Los scripts están en `instalacion/` (en GitHub **y** en el disco externo, dentr
 - [ ] `martos gnome` no aplica en Cinnamon: rehacer atajos/dock/fondo a mano.
 - [ ] Autostart de eww (`usuario/.config/autostart/eww-todo-daemon.desktop`): no restaurar.
 - [ ] Opcional: subvolúmenes `@conda` y `@biodata` en el Intel (para excluirlos de las instantáneas de Timeshift).
+
+### Después de restaurar Mint: privacidad del correo en GitHub
+
+- [ ] Correo privado de GitHub como autor por defecto:
+      `git config --global user.email 38733889+MartinVergaraVargas@users.noreply.github.com`
+      (y quitar el `user.email` local de MartOS: `git -C ~/.config/MartOS config --unset user.email`)
+- [ ] GitHub → Settings → Emails: activar "Keep my email addresses private" y
+      "Block command line pushes that expose my email".
+- [ ] Verificación en dos pasos activa en GitHub y en Gmail (es lo que de verdad protege la cuenta).
+- [ ] Opcional: reescribir MartOS con el correo privado (`git filter-branch --env-filter` + `git push --force`).
+      No reescribir Glooba ni Mycrotal: tienen colaboradores.
+      Contexto: `vergaravargas.martin@gmail.com` ya es público en Mycrotal (31 commits), Glooba (14) y
+      Genome-Assembly-Annotation (2); no es un riesgo de acceso, pero sí de spam/phishing.
