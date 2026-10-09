@@ -1,0 +1,10 @@
+name: seqkit
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - seqkit
+  - minimap2
+  - bwa
+  - samtools

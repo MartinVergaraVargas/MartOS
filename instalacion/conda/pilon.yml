@@ -1,0 +1,9 @@
+name: pilon
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - pilon
+  - bwa
+  - samtools

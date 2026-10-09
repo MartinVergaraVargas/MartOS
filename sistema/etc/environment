@@ -1,9 +1,9 @@
 # ──────────────────────────────────────────────────────────────────
 # MartOS
 # Variables de entorno de TODA la sesión (las lee PAM al iniciar sesión).
-# TMPDIR=/data/scratch: temporales grandes al disco de datos, no a /tmp.
+# TMPDIR=/var/tmp: temporales grandes al disco del sistema (Kingston), no a /tmp en RAM.
 # Tras editar: cerrar sesión y volver a entrar.
 # Guía de todos los archivos: ~/.config/MartOS/INFORME.md
 # ──────────────────────────────────────────────────────────────────
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
-TMPDIR="/data/scratch"
+TMPDIR="/var/tmp"

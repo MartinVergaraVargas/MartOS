@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────
 # MartOS
 # /tmp en RAM (tmpfs) con tope de 4 GiB (copia de la unidad de systemd
-# con size=4G). Los temporales grandes van a TMPDIR=/data/scratch.
+# con size=4G). Los temporales grandes van a TMPDIR=/var/tmp (en disco).
 # Tras editar: reiniciar.
 # Guía de todos los archivos: ~/.config/MartOS/INFORME.md
 # ──────────────────────────────────────────────────────────────────

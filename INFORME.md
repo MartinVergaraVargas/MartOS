@@ -106,7 +106,7 @@ auto-cpufreq se instala desde [AdnanHodzic/auto-cpufreq](https://github.com/Adna
 | `/etc/systemd/zram-generator.conf` | Swap comprimido en RAM de 6 GiB (zstd), prioridad 100. Paquete `systemd-zram-generator`. |
 | `/etc/sysctl.d/99-zram-tmp.conf` | `vm.swappiness=100` y `vm.page-cluster=0`: valores recomendados cuando la swap es zram. |
 | `/etc/systemd/system/tmp.mount` | `/tmp` en RAM (tmpfs) limitado a 4 GiB. |
-| `/etc/environment` | `TMPDIR=/data/scratch`: los temporales grandes (bioinformática) van al disco de datos, no a `/tmp` en RAM. |
+| `/etc/environment` | `TMPDIR=/var/tmp`: los temporales grandes (bioinformática) van al disco del sistema (Kingston), no a `/tmp` en RAM. Hasta 2026-10-08 apuntaba a `/data/scratch` (Intel); se cambió para poder redimensionar ese disco. |
 | `/etc/fstab` (*no versionado*, ver §5) | Monta el disco `LABEL=Respaldo` en `/data` con `nofail`; además existe `/swap.img` de 8 GiB (prioridad −1, solo se usa si zram se llena). |
 
 ### 2.6 Hardware OMEN y sistema
@@ -215,8 +215,8 @@ Para añadir algo nuevo: crea `~/.bashrc.d/NN-nombre.sh`; se carga en la próxim
 12. `/etc/hp-manager/rgb.json` probablemente es un resto de OmenCommandCenterforLinux.
 13. `/usr/local/bin/omen-fan` y `omen-fand` (versión 1) siguen instalados pero **no se usan**. Para borrarlos:
     `sudo rm /usr/local/bin/omen-fan /usr/local/bin/omen-fand`.
-14. `/data` tiene `nofail`. Si el disco no está, `TMPDIR` apunta a una carpeta que no existe y algunos
-    programas fallarán al crear temporales.
+14. `/data` tiene `nofail`. Desde 2026-10-08 `TMPDIR` ya no depende de `/data`, así que si el disco no está
+    no pasa nada salvo que `/data` quede vacía.
 15. `~/Instaladores/instalaciones.sh` instala Miniconda en `~/miniconda3`, pero tu instalación real
     está en `/opt/miniconda3` (es lo que usa `.bashrc`). Copia en `instalacion/instalaciones-original.sh`.
 16. `GITHUB_TOKEN` en `~/.config/env` está **caducado/inválido**: hace que `gh` falle aunque tengas
@@ -225,6 +225,9 @@ Para añadir algo nuevo: crea `~/.bashrc.d/NN-nombre.sh`; se carga en la próxim
 ---
 
 ## 4. Restaurar después de formatear
+
+> **Migración a Linux Mint (2026-10):** sigue `PLAN-MINT.md`, no esta sección. Lo de abajo es el
+> procedimiento para reinstalar **Ubuntu**; en Mint usa `sudo martos restaurar-sistema --solo-hardware`.
 
 ```bash
 # 0. Ubuntu 24.04 recién instalado, con el disco de datos con etiqueta "Respaldo"

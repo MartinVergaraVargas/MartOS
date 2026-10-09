@@ -1,0 +1,8 @@
+name: herramientas
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - pypdf
+  - pymupdf

@@ -32,5 +32,5 @@ esac
 # Rust (rustup). El script ya evita duplicados en PATH.
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
-# TMPDIR=/data/scratch se define a nivel de sistema en /etc/environment
+# TMPDIR=/var/tmp se define a nivel de sistema en /etc/environment
 # (ver sistema/etc/environment); no hace falta repetirlo aquí.

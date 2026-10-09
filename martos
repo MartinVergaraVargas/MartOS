@@ -65,6 +65,29 @@ pairs_usuario() {
 
 pairs_todo() { pairs_sistema; pairs_usuario; }
 
+# Archivos de /etc que pertenecen a la DISTRO (no a tu hardware): con --solo-hardware no se
+# copian, porque pisarían los valores por defecto de otra distro/versión. Formato:
+#   ruta|qué hacer a mano
+DE_LA_DISTRO=(
+    "/etc/default/grub|añade 'nvidia-drm.modeset=1' a GRUB_CMDLINE_LINUX_DEFAULT (+ GRUB_TIMEOUT=0, GRUB_TIMEOUT_STYLE=hidden si quieres el menú oculto) y: sudo update-grub"
+    "/etc/environment|PENDIENTE: decidir los temporales (TMPDIR). Ver PLAN-MINT.md"
+    "/etc/systemd/system/tmp.mount|PENDIENTE: /tmp en RAM (tmpfs 4G). Ver PLAN-MINT.md"
+    "/etc/sysctl.d/99-zram-tmp.conf|PENDIENTE (va con los temporales/zram): vm.swappiness=100, vm.page-cluster=0"
+    "/etc/systemd/logind.conf|copia solo las líneas que cambiaste: martos diff logind"
+    "/etc/bluetooth/main.conf|copia solo las líneas que cambiaste: martos diff bluetooth"
+    "/etc/smartd.conf|copia solo las líneas que cambiaste: martos diff smartd"
+    "/etc/default/smartmontools|copia solo las líneas que cambiaste: martos diff smartmontools"
+    "/etc/modules|omen-rgb-keyboard: su install.sh ya lo carga; si no, añade 'omen_rgb_keyboard'"
+    "/etc/gdm3/custom.conf|Mint usa LightDM: Menú → Ventana de inicio de sesión → Usuarios → inicio automático"
+    "/etc/prime-discrete|Mint: applet de NVIDIA PRIME → 'bajo demanda' (on-demand)"
+    "/etc/hp-manager/rgb.json|probablemente huérfano (INFORME §3): no hace falta"
+)
+es_de_la_distro() {
+    local e
+    for e in "${DE_LA_DISTRO[@]}"; do [ "${e%%|*}" = "$1" ] && return 0; done
+    return 1
+}
+
 # Archivos nuevos en ~/.bashrc.d que aún no están en el respaldo
 bashrc_d_nuevos() {
     local f
@@ -145,11 +168,17 @@ cmd_respaldar() {
 # ---------------------------------------------------------------------------
 cmd_restaurar_sistema() {
     need_root restaurar-sistema
-    local ts backup copia orig mode changed=()
+    local solo_hw=0 ts backup copia orig mode changed=() omitidos=() e
+    case "${1:-}" in
+        --solo-hardware) solo_hw=1 ;;
+        "") ;;
+        *) die "opción desconocida '$1' (¿--solo-hardware?)" ;;
+    esac
     ts="$(date +%Y%m%d-%H%M%S)"
     backup="/var/backups/martos/$ts"
 
     while IFS='|' read -r copia orig; do
+        if [ "$solo_hw" -eq 1 ] && es_de_la_distro "$orig"; then omitidos+=("$orig"); continue; fi
         if [ -e "$orig" ] && cmp -s "$copia" "$orig"; then continue; fi
         [ -e "$orig" ] && install -D -m 600 "$orig" "$backup$orig"
         if [ -x "$copia" ]; then mode=755; else mode=644; fi
@@ -164,7 +193,16 @@ cmd_restaurar_sistema() {
         [ -d "$backup" ] && info "Lo que había antes quedó en $backup"
         post_install "${changed[@]}"
     fi
-    enable_services
+    enable_services "$solo_hw"
+
+    if [ "${#omitidos[@]}" -gt 0 ]; then
+        info "No restaurados (son de la distro; hazlo a mano). El respaldo está en $SISTEMA:"
+        for orig in "${omitidos[@]}"; do
+            for e in "${DE_LA_DISTRO[@]}"; do
+                [ "${e%%|*}" = "$orig" ] && printf '  %s%s%s\n      → %s\n' "$Y" "$orig" "$N" "${e#*|}"
+            done
+        done
+    fi
 }
 
 # Acciones posteriores según qué archivos hayan cambiado
@@ -201,12 +239,14 @@ post_install() {
 }
 
 enable_services() {
-    local u
+    local solo_hw="${1:-0}" u
     # power-profiles-daemon choca con auto-cpufreq
     systemctl is-enabled power-profiles-daemon.service 2>/dev/null | grep -q masked \
         || systemctl mask power-profiles-daemon.service 2>/dev/null || true
     for u in omen-fan.service nvidia-power-limit.service intel-undervolt.service \
              auto-cpufreq.service thermald.service tmp.mount; do
+        # tmp.mount (/tmp en RAM) es una decisión pendiente, no hardware
+        [ "$solo_hw" -eq 1 ] && [ "$u" = tmp.mount ] && continue
         if systemctl cat "$u" >/dev/null 2>&1; then
             systemctl is-enabled -q "$u" 2>/dev/null || { systemctl enable "$u" && echo "  habilitado $u"; }
         else
@@ -316,6 +356,8 @@ Uso diario
 
 Tras formatear
   sudo martos restaurar-sistema   respaldo → /etc, /usr/local/bin (+ servicios)
+        --solo-hardware           solo lo de tu hardware (ventiladores, undervolt, NVIDIA…);
+                                  lo propio de la distro (grub, logind…) lo lista para hacerlo a mano
   martos restaurar-usuario        respaldo → ~/.bashrc, ~/.bashrc.d…
   martos gnome                    atajos, dock y fondo
 

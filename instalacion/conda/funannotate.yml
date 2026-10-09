@@ -1,0 +1,8 @@
+name: funannotate
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - funannotate
+  - eggnog-mapper
