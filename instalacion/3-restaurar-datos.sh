@@ -25,9 +25,12 @@ if ! findmnt -no SOURCE /home | grep -q kingston-home; then
     sleep 10
 fi
 
+sudo -v
 info "1/3  Carpeta personal"
+# Con sudo y --numeric-ids: hay archivos de otros usuarios (la base MySQL de Specify en Docker,
+# uid 999) que tu usuario no puede leer y que deben conservar su dueño numérico.
 # Fuera: lo que pertenece al escritorio GNOME de Ubuntu o lo gestiona martos restaurar-usuario
-rsync -aHAX --info=progress2 \
+sudo rsync -aHAX --numeric-ids --info=progress2 \
     --exclude='/.config/dconf/' --exclude='/.config/autostart/' --exclude='/.config/monitors.xml' \
     --exclude='/.local/share/gnome-shell/' --exclude='/.config/gnome-session/' \
     --exclude='/.bashrc' --exclude='/.bashrc.d/' --exclude='/.profile' --exclude='/.bash_logout' \
