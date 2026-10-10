@@ -99,7 +99,7 @@ info "Comprobación: segunda pasada en seco (debería no quedar nada por copiar)
 pend=0
 for par in "$HOME/|$DEST/home/" "/srv/TFM/|$DEST/Tricho-PGPT/" "/srv/biodata/|$DEST/biodata/"; do
     n=$(rsync -aHAXn --out-format='%n' "${EXCL_HOME[@]}" \
-          "${par%%|*}" "${par#*|}" 2>/dev/null | grep -v '/$' | wc -l)
+          "${par%%|*}" "${par#*|}" 2>/dev/null | grep -v '/$' | wc -l || true)
     printf '  %-16s %s archivos pendientes\n' "${par%%|*}" "$n"
     pend=$((pend + n))
 done
